@@ -38,7 +38,7 @@ play(char *song)
 {
 	char buf[512];
 	if(player_pid != -1){
-		stop();
+		return "already playing";
 	}
 	if(song == NULL){
 		player_pid = 0;
