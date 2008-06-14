@@ -1,0 +1,9 @@
+#!/bin/sh
+
+case $(echo $1 |tr A-Z a-z) in
+	*.mp3) exec mpg123 -o alsa "$1";;
+	*.ogg) exec ogg123 "$1";;
+	*.lds) exec aoss adplay -Ooss -o "$1";;
+	*.xm|*.it|*.mod) exec aoss mikmod -qd1 -p0 "$1";;
+	*.jpg|*.png) exec feh "$1";;
+esac

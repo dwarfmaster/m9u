@@ -1,0 +1,6 @@
+#!/bin/sh
+
+case $(echo $1 |tr A-Z a-z) in
+	*.mp3) echo $(mp3info -p '%a - %t' "$1");;
+	*) echo $(basename "$1");;
+esac
