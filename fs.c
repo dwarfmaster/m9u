@@ -6,6 +6,9 @@
 
 #include "m9u.h"
 
+extern void sendevent(char*, IxpFid*);
+extern void evrespond(Ixp9Req*);
+
 /* 
 0600 /ctl
 	add <file>
@@ -34,7 +37,7 @@ struct {char *name; qpath parent; int type; int mode;} files[QMAX] = {
 	{"", QNONE, P9_QTDIR, 0500|P9_DMDIR},
 	{"ctl", QROOT, P9_QTFILE, 0200},
 	{"list", QROOT, P9_QTFILE, 0400},
-	{"queue", QROOT, P9_QTFILE, 0400},
+	{"queue", QROOT, P9_QTFILE, 0600|P9_OAPPEND},
 	{"event", QROOT, P9_QTFILE, 0400}
 };
 
@@ -48,11 +51,22 @@ typedef struct Event {
 } Event;
 
 typedef struct Fidaux {
-	char *contents;
-	int size;
-	Event *events;
-	int evoffset;
-	Ixp9Req *blocked;
+	enum {BUF, EVENT} rdtype;
+	union {
+		struct {
+			char *data;
+			int size;
+		} buf;
+
+		struct {
+			Event *list;
+			int offset;
+			Ixp9Req *blocked;
+		} ev;
+	} rd;
+
+	char *pre;
+	int prelen;
 } Fidaux;
 
 static char*
@@ -83,11 +97,6 @@ ctlparse(char *line, int len)
 			return "out of memory";
 		}
 		add(song);
-	} else if(len > 6 && strncmp(line, "queue ", 6) == 0){
-		if(!(song = dupsong(line+6, len-6))){
-			return "out of memory";
-		}
-		enqueue(song);
 	} else if(len >= 4 && strncmp(line, "stop", 4) == 0){
 		/* TODO support stop-after-n-songs */
 		stop();
@@ -110,19 +119,63 @@ newfidaux(int buflen)
 	if(!(out = malloc(sizeof(Fidaux)))) {
 		return NULL;
 	}
-	out->contents = NULL;
-	out->size = 0;
-	out->events = NULL;
-	out->evoffset = 0;
-	out->blocked = NULL;
-	if(buflen && !(out->contents = malloc(buflen))) {
-		free(out);
-		return NULL;
+	if(buflen >= 0) {
+		out->rdtype = BUF;
+		out->rd.buf.data = NULL;
+		out->rd.buf.size = buflen;
+		if(buflen && !(out->rd.buf.data = malloc(buflen))) {
+			free(out);
+			return NULL;
+		}
+	} else {
+		out->rdtype = EVENT;
+		out->rd.ev.list = NULL;
+		out->rd.ev.offset = 0;
+		out->rd.ev.blocked = NULL;
 	}
+	out->pre = NULL;
 	return out;
 }
 
-int
+void
+freefidaux(IxpFid *fid)
+{
+	int i;
+	Fidaux *fidaux;
+	fidaux = (Fidaux*)fid->aux;
+	if(fidaux->rdtype == BUF) {
+		if(fidaux->rd.buf.data) {
+			free(fidaux->rd.buf.data);
+		}
+	} else {
+		for(i = 0; i < nevfids; ++i) {
+			if(fid == evfids[i]) {
+				if(i+1 < nevfids) {
+					memcpy(evfids+i, evfids+i+1, (nevfids-1-i)*sizeof(IxpFid*));
+				}
+				--nevfids;
+				break;
+			}
+		}
+		if(fidaux->rd.ev.list) {
+			Event *ev, *next;
+			for(ev = fidaux->rd.ev.list; ev; ev = next) {
+				next = ev->next;
+				if(--ev->refcount == 0) {
+					free(ev->event);
+					free(ev);
+				}
+			}
+		}
+	}
+	if(fidaux->pre) {
+		free(fidaux->pre);
+	}
+	free(fidaux);
+	fid->aux = NULL;
+}
+
+static int
 dispatch(Ixp9Req *r, char *event, int len)
 {
 	if(len > r->ifcall.count) {
@@ -149,18 +202,18 @@ evrespond(Ixp9Req *r)
 	int len, n;
 
 	fidaux = (Fidaux*)r->fid->aux;
-	ev = fidaux->events;
-	event = fidaux->events->event + fidaux->evoffset;
+	ev = fidaux->rd.ev.list;
+	event = fidaux->rd.ev.list->event + fidaux->rd.ev.offset;
 	len = strlen(event);
 	if((n = dispatch(r, event, len)) >= len) {
-		fidaux->events = ev->next;
+		fidaux->rd.ev.list = ev->next;
 		if(--ev->refcount == 0) {
 			free(ev->event);
 			free(ev);
 		}
-		fidaux->evoffset = 0;
+		fidaux->rd.ev.offset = 0;
 	} else {
-		fidaux->evoffset += n;
+		fidaux->rd.ev.offset += n;
 	}
 }
 
@@ -192,11 +245,11 @@ sendevent(char *event, IxpFid *fid)
 	Fidaux *fidaux;
 	if((ev = newevent(event, fid))) {
 		fidaux = (Fidaux*)fid->aux;
-		for(pev = &fidaux->events; *pev; pev = &(*pev)->next);
+		for(pev = &fidaux->rd.ev.list; *pev; pev = &(*pev)->next);
 		*pev = ev;
-		if(fidaux->blocked) {
-			evrespond(fidaux->blocked);
-			fidaux->blocked = NULL;
+		if(fidaux->rd.ev.blocked) {
+			evrespond(fidaux->rd.ev.blocked);
+			fidaux->rd.ev.blocked = NULL;
 		}
 	}
 }
@@ -211,13 +264,13 @@ postevent(char *event)
 		return; /* no one is listening... */
 	}
 	if((ev = newevent(event, NULL))) {	
-		for(i=0; i<nevfids; ++i) {
+		for(i = 0; i < nevfids; ++i) {
 			fidaux = (Fidaux*)evfids[i]->aux;
-			for(pev = &fidaux->events; *pev; pev = &(*pev)->next);
+			for(pev = &fidaux->rd.ev.list; *pev; pev = &(*pev)->next);
 			*pev = ev;
-			if(fidaux->blocked) {
-				evrespond(fidaux->blocked);
-				fidaux->blocked = NULL;
+			if(fidaux->rd.ev.blocked) {
+				evrespond(fidaux->rd.ev.blocked);
+				fidaux->rd.ev.blocked = NULL;
 			}
 		}
 	}
@@ -241,8 +294,8 @@ fs_walk(Ixp9Req *r)
 
 	cwd = r->fid->qid.path;
 	r->ofcall.nwqid = 0;
-	for(i=0; i<r->ifcall.nwname; ++i){
-		for(j=0; j<QMAX; ++j){
+	for(i = 0; i < r->ifcall.nwname; ++i){
+		for(j = 0; j < QMAX; ++j){
 			if(files[j].parent == cwd && strcmp(files[j].name, r->ifcall.wname[i]) == 0)
 				break;
 		}
@@ -263,7 +316,6 @@ void
 fs_open(Ixp9Req *r)
 {
 	/* TODO permissions check */
-	/* TODO spawn thread for /event? */
 	Fidaux *fidaux = NULL;
 	char *cp;
 
@@ -275,9 +327,9 @@ fs_open(Ixp9Req *r)
 				respond(r, "out of memory");
 				return;
 			}
-			fidaux->size = playlist.buflen;
-			cp = fidaux->contents;
-			for(i=0; i<playlist.nsongs; ++i) {
+			fidaux->rd.buf.size = playlist.buflen;
+			cp = fidaux->rd.buf.data;
+			for(i = 0; i < playlist.nsongs; ++i) {
 				cp += sprintf(cp, "%s\n", playlist.songs[i]);
 			}
 			r->fid->aux = fidaux;
@@ -288,16 +340,16 @@ fs_open(Ixp9Req *r)
 			int buflen;
 			
 			buflen = 0;
-			for(qn=queue; qn; qn=qn->next) {
+			for(qn = queue; qn; qn=qn->next) {
 				buflen += strlen(qn->song)+1;
 			}
 			if(!(fidaux = newfidaux(buflen))) {
 				respond(r, "out of memory");
 				return;
 			}
-			fidaux->size = buflen;
-			cp = fidaux->contents;
-			for(qn=queue; qn; qn=qn->next) {
+			fidaux->rd.buf.size = buflen;
+			cp = fidaux->rd.buf.data;
+			for(qn = queue; qn; qn=qn->next) {
 				cp += sprintf(cp, "%s\n", qn->song);
 			}
 			r->fid->aux = fidaux;
@@ -337,36 +389,21 @@ fs_open(Ixp9Req *r)
 void
 fs_clunk(Ixp9Req *r)
 {
-	/* TODO kill /event thread */
-	Fidaux *fidaux;
-	int i;
-	if((fidaux=(Fidaux*)r->fid->aux)) {
-		if(fidaux->contents) {
-			free(fidaux->contents);
-			fidaux->size = 0;
-		} else {
-			for(i = 0; i < nevfids; ++i) {
-				if(r->fid == evfids[i]) {
-					if(i+1 < nevfids) {
-						memcpy(evfids+i, evfids+i+1, (nevfids-1-i)*sizeof(IxpFid*));
-					}
-					--nevfids;
-					break;
+	switch(r->fid->qid.path) {
+		case QQUEUE: {
+			char *song;
+			Fidaux *fidaux = (Fidaux*)r->fid->aux;
+			if(fidaux->pre) {
+				if((song = dupsong(fidaux->pre, fidaux->prelen))) {
+					enqueue(song);
 				}
-			}
-			if(fidaux->events) {
-				Event *ev, *next;
-				for(ev = fidaux->events; ev; ev = next) {
-					next = ev->next;
-					if(--ev->refcount == 0) {
-						free(ev->event);
-						free(ev);
-					}
-				}
+				free(fidaux->pre);
+				fidaux->pre = NULL;
 			}
 		}
-		free(fidaux);
-		r->fid->aux = NULL;
+	}
+	if((r->fid->aux)) {
+		freefidaux(r->fid);
 	}
 	respond(r, NULL);
 }
@@ -415,12 +452,12 @@ fs_read(Ixp9Req *r)
 		m = ixp_message(buf, sizeof(buf), MsgPack);
 
 		r->ofcall.count = 0;
-		/* hack! */
 		if(r->ifcall.offset > 0) {
+			/* hack! assuming the whole directory fits in a single Rread */
 			respond(r, NULL);
 			return;
 		}
-		for(i=0; i<QMAX; ++i){
+		for(i = 0; i < QMAX; ++i){
 			if(files[i].parent == r->fid->qid.path){
 				dostat(&st, i);
 				ixp_pstat(&m, &st);
@@ -438,9 +475,9 @@ fs_read(Ixp9Req *r)
 	}
 
 	if((fidaux = (Fidaux*)r->fid->aux)) {
-		if(fidaux->contents && r->ifcall.offset < fidaux->size) {
-			if(r->ifcall.offset + r->ifcall.count > fidaux->size) {
-				r->ofcall.count = fidaux->size - r->ifcall.offset;
+		if(fidaux->rdtype == BUF && r->ifcall.offset < fidaux->rd.buf.size) {
+			if(r->ifcall.offset + r->ifcall.count > fidaux->rd.buf.size) {
+				r->ofcall.count = fidaux->rd.buf.size - r->ifcall.offset;
 			} else {
 				r->ofcall.count = r->ifcall.count;
 			}
@@ -449,19 +486,19 @@ fs_read(Ixp9Req *r)
 				respond(r, "out of memory");
 				return;
 			}
-			memcpy(r->ofcall.data, fidaux->contents+r->ifcall.offset, r->ofcall.count);
+			memcpy(r->ofcall.data, fidaux->rd.buf.data+r->ifcall.offset, r->ofcall.count);
 			respond(r, NULL);
 			return;
-		} else if(!fidaux->contents) {
-			if(fidaux->events) {
+		} else if(fidaux->rdtype == EVENT) {
+			if(fidaux->rd.ev.list) {
 				evrespond(r);
 			} else {
 				/* there's no pending event, so we don't respond(), which leaves the client blocked */
-				if(fidaux->blocked) {
+				if(fidaux->rd.ev.blocked) {
 					/* ... unless this fid is already blocked */
 					respond(r, "fid already blocked on /event");
 				} else {
-					fidaux->blocked = r;
+					fidaux->rd.ev.blocked = r;
 				}	
 			}
 			return;
@@ -474,6 +511,8 @@ fs_read(Ixp9Req *r)
 void
 fs_write(Ixp9Req *r)
 {
+	Fidaux *fidaux;
+	fidaux = (Fidaux*)r->fid->aux;
 	switch(r->fid->qid.path){
 		case QCTL:
 			/* TODO allow multiple messages in a single write, one per line */
@@ -481,6 +520,49 @@ fs_write(Ixp9Req *r)
 			ctlparse(r->ifcall.data, r->ifcall.count);
 			r->ofcall.count = r->ifcall.count;
 			break;
+		case QQUEUE: {
+			char *start, *end, *song;
+			int len;
+			start = r->ifcall.data;
+			end = memchr(r->ifcall.data, '\n', r->ifcall.count);
+			if(end == NULL) {
+				end = start+r->ifcall.count;
+			}
+			if(fidaux->pre) {
+				len = (end-start) + fidaux->prelen;
+				if(!(song = malloc(len+1))) {
+					respond(r, "out of memory");
+					return;
+				}
+				memcpy(song, fidaux->pre, fidaux->prelen);
+				memcpy(song+fidaux->prelen, start, end-start);
+				song[len] = '\0';
+				enqueue(song);
+				free(fidaux->pre);
+				fidaux->pre = NULL;
+				fidaux->prelen = 0;
+				start = end+1;
+				end = memchr(start, '\n', r->ifcall.count - (start-r->ifcall.data));
+			}
+			while(end) {
+				if(!(song = dupsong(start, end-start))) {
+					respond(r, "out of memory");
+					return;
+				}
+				enqueue(song);
+				start = end+1;
+				end = memchr(start, '\n', r->ifcall.count - (start-r->ifcall.data));
+			}
+			fidaux->prelen = r->ifcall.count - (start-r->ifcall.data);
+			if(fidaux->prelen > 0) {
+				if(!(fidaux->pre = malloc(fidaux->prelen))) {
+					respond(r, "out of memory");
+					return;
+				}
+				memcpy(fidaux->pre, start, fidaux->prelen);
+			}
+			r->ofcall.count = r->ifcall.count;
+		}
 	}
 	respond(r, NULL);
 }
