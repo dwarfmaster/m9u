@@ -21,6 +21,8 @@ extern Queue *queue;
 
 typedef enum {QNONE=-1, QROOT=0, QCTL, QLIST, QQUEUE, QEVENT, QMAX} qpath;
 typedef struct Fileinfo_ Fileinfo;
+typedef struct Event_ Event;
+typedef struct Fidaux_ Fidaux;
 
 struct Fileinfo_
 {
@@ -31,7 +33,36 @@ struct Fileinfo_
 	unsigned int size;
 };
 
+struct Event_
+{
+	char *event;
+	int refcount;
+	Event *next;
+};
+
+struct Fidaux_
+{
+	enum {BUF, EVENT} rdtype;
+	union {
+		struct {
+			char *data;
+			int size;
+		} buf;
+
+		struct {
+			Event *list;
+			int offset;
+			Ixp9Req *blocked;
+		} ev;
+	} rd;
+
+	char *pre;
+	int prelen;
+};
+
 extern Fileinfo files[];
+extern IxpFid **evfids;
+extern int nevfids;
 
 extern int plinit(Playlist*);
 extern int pladd(Playlist*, char*);
@@ -44,4 +75,5 @@ extern void enqueue(char*);
 extern char* play(char*);
 extern void songends();
 
-extern void postevent(char*);
+extern void putevent(IxpFid*, char*, ...);
+extern void evrespond(Ixp9Req *r);

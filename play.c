@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <signal.h>
 
+#include <ixp.h>
+
 #include "m9u.h"
 
 char *player_cmd = "m9uplay";
@@ -27,7 +29,7 @@ stop()
 {
 	if(player_pid == -1)
 		return;
-	postevent("Stop");
+	putevent(NULL, "Stop");
 	kill(player_pid, SIGTERM);
 	player_pid = -1;
 	playing_song[0] = '\0';
@@ -36,7 +38,6 @@ stop()
 char*
 play(char *song)
 {
-	char buf[512];
 	if(player_pid != -1){
 		return "already playing";
 	}
@@ -56,8 +57,7 @@ play(char *song)
 			exit(1);
 		default:
 			snprintf(playing_song, sizeof(playing_song), "%s", song);
-			snprintf(buf, sizeof(buf), "Play %s", song);
-			postevent(buf);
+			putevent(NULL, "Play %s", playing_song);
 	}
 	return NULL;
 }

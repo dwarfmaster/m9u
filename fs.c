@@ -34,31 +34,6 @@ Fileinfo files[QMAX] = {
 IxpFid **evfids = NULL;
 int nevfids = 0, maxevfids = 0;
 
-typedef struct Event {
-	char *event;
-	int refcount;
-	struct Event *next;
-} Event;
-
-typedef struct Fidaux {
-	enum {BUF, EVENT} rdtype;
-	union {
-		struct {
-			char *data;
-			int size;
-		} buf;
-
-		struct {
-			Event *list;
-			int offset;
-			Ixp9Req *blocked;
-		} ev;
-	} rd;
-
-	char *pre;
-	int prelen;
-} Fidaux;
-
 static char*
 dupsong(char *buf, int len)
 {
@@ -165,107 +140,6 @@ freefidaux(IxpFid *fid)
 	fid->aux = NULL;
 }
 
-static int
-dispatch(Ixp9Req *r, char *event, int len)
-{
-	if(len > r->ifcall.count) {
-		r->ofcall.count = r->ifcall.count;
-	} else {
-		r->ofcall.count = len;
-	}
-	if(!(r->ofcall.data = malloc(r->ofcall.count))) {
-		r->ofcall.count = 0;
-		respond(r, "out of memory");
-		return 0;
-	}
-	memcpy(r->ofcall.data, event, r->ofcall.count);
-	respond(r, NULL);
-	return r->ofcall.count;
-}
-
-void
-evrespond(Ixp9Req *r)
-{
-	Fidaux *fidaux;
-	Event *ev;
-	char *event;
-	int len, n;
-
-	fidaux = (Fidaux*)r->fid->aux;
-	ev = fidaux->rd.ev.list;
-	event = fidaux->rd.ev.list->event + fidaux->rd.ev.offset;
-	len = strlen(event);
-	if((n = dispatch(r, event, len)) >= len) {
-		fidaux->rd.ev.list = ev->next;
-		if(--ev->refcount == 0) {
-			free(ev->event);
-			free(ev);
-		}
-		fidaux->rd.ev.offset = 0;
-	} else {
-		fidaux->rd.ev.offset += n;
-	}
-}
-
-Event*
-newevent(char *event, IxpFid *fid)
-{
-	Event *ev;
-	int len;
-	if((ev = malloc(sizeof(Event)))) {
-		len = strlen(event);
-		if((ev->event = malloc(len+2))) {
-			snprintf(ev->event, len+2, "%s\n", event);
-			ev->refcount = (fid) ? 1:nevfids;
-			ev->next = NULL;
-			return ev;
-		} else {
-			free(ev);
-		}
-	}
-	fprintf(stderr, "m9u: couldn't alloc %d+%d bytes for event!\n", sizeof(Event), len+2);
-	return NULL;
-}
-
-/* TODO make send/postevent varadic */
-void
-sendevent(char *event, IxpFid *fid)
-{
-	Event *ev, **pev;
-	Fidaux *fidaux;
-	if((ev = newevent(event, fid))) {
-		fidaux = (Fidaux*)fid->aux;
-		for(pev = &fidaux->rd.ev.list; *pev; pev = &(*pev)->next);
-		*pev = ev;
-		if(fidaux->rd.ev.blocked) {
-			evrespond(fidaux->rd.ev.blocked);
-			fidaux->rd.ev.blocked = NULL;
-		}
-	}
-}
-
-void
-postevent(char *event)
-{
-	Event *ev, **pev;
-	Fidaux *fidaux;
-	int i;
-	if(nevfids == 0) {
-		return; /* no one is listening... */
-	}
-	if((ev = newevent(event, NULL))) {	
-		for(i = 0; i < nevfids; ++i) {
-			fidaux = (Fidaux*)evfids[i]->aux;
-			for(pev = &fidaux->rd.ev.list; *pev; pev = &(*pev)->next);
-			*pev = ev;
-			if(fidaux->rd.ev.blocked) {
-				evrespond(fidaux->rd.ev.blocked);
-				fidaux->rd.ev.blocked = NULL;
-			}
-		}
-	}
-}
-
 void
 fs_attach(Ixp9Req *r)
 {
@@ -360,11 +234,9 @@ fs_open(Ixp9Req *r)
 			}
 			evfids[nevfids++] = r->fid;
 			if(*playing_song == '\0') {
-				sendevent("Stop", r->fid);
+				putevent(r->fid, "Stop");
 			} else {
-				char buf[512];
-				snprintf(buf, sizeof(buf), "Play %s", playing_song);
-				sendevent(buf, r->fid);
+				putevent(r->fid, "Play %s", playing_song);
 			}
 			break;
 		}

@@ -1,6 +1,6 @@
 o=8
 CFLAGS=-g -Wall -I/usr/local/include -DIXPlint -DIXP_NEEDAPI=89
-OBJ=main.$o fs.$o play.$o list.$o
+OBJ=main.$o fs.$o event.$o play.$o list.$o
 LIBS=-L/usr/local/lib -lixp
 prefix=$(HOME)
 

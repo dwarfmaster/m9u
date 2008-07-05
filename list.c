@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <ixp.h>
+
 #include "m9u.h"
 
 int
