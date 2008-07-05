@@ -26,5 +26,5 @@ pladd(Playlist *pl, char *song)
 		pl->maxn *= 2;
 	}
 	pl->songs[pl->nsongs++] = song;
-	pl->buflen += strlen(song)+1;
+	return 0;
 }

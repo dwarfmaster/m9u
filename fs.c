@@ -6,19 +6,15 @@
 
 #include "m9u.h"
 
-extern void sendevent(char*, IxpFid*);
-extern void evrespond(Ixp9Req*);
-
 /* 
 0600 /ctl
 	add <file>
-	queue <file>
 	stop <n>
 	skip <n>
 	play
 0400 /list
 	list of filenames in playlist, one per line
-0400 /queue
+0600 /queue
 	list of songs queued up
 0400 /event
 	Play <file>
@@ -26,19 +22,13 @@ extern void evrespond(Ixp9Req*);
 	Select <file>
 */
 
-extern char current_song[];
-extern int player_pid;
-extern Playlist playlist;
-extern Queue *queue;
-
-typedef enum {QNONE=-1, QROOT=0, QCTL, QLIST, QQUEUE, QEVENT, QMAX} qpath;
-
-struct {char *name; qpath parent; int type; int mode;} files[QMAX] = {
-	{"", QNONE, P9_QTDIR, 0500|P9_DMDIR},
-	{"ctl", QROOT, P9_QTFILE, 0200},
-	{"list", QROOT, P9_QTFILE, 0400},
-	{"queue", QROOT, P9_QTFILE, 0600|P9_OAPPEND},
-	{"event", QROOT, P9_QTFILE, 0400}
+/* name, parent, type, mode, size */
+Fileinfo files[QMAX] = {
+	{"", QNONE, P9_QTDIR, 0500|P9_DMDIR, 0},
+	{"ctl", QROOT, P9_QTFILE, 0200, 0},
+	{"list", QROOT, P9_QTFILE, 0400, 0},
+	{"queue", QROOT, P9_QTFILE, 0600|P9_OAPPEND, 0},
+	{"event", QROOT, P9_QTFILE, 0400, 0}
 };
 
 IxpFid **evfids = NULL;
@@ -91,7 +81,7 @@ ctlparse(char *line, int len)
 {
 	char *song;
 	/* line is not NUL terminated */
-	/* TODO drop add/queue from ctl, just append to /list or /queue instead */
+	/* TODO drop add from ctl, just append to /list instead */
 	if(len > 4 && strncmp(line, "add ", 4) == 0){
 		if(!(song = dupsong(line+4, len-4))){
 			return "out of memory";
@@ -319,15 +309,16 @@ fs_open(Ixp9Req *r)
 	Fidaux *fidaux = NULL;
 	char *cp;
 
+	/* TODO most of this stuff only has to be done when opening for read */
 	switch(r->fid->qid.path) {
 		case QLIST: {
 			int i;
 
-			if(!(fidaux = newfidaux(playlist.buflen))) {
+			if(!(fidaux = newfidaux(files[QLIST].size))) {
 				respond(r, "out of memory");
 				return;
 			}
-			fidaux->rd.buf.size = playlist.buflen;
+			fidaux->rd.buf.size = files[QLIST].size;
 			cp = fidaux->rd.buf.data;
 			for(i = 0; i < playlist.nsongs; ++i) {
 				cp += sprintf(cp, "%s\n", playlist.songs[i]);
@@ -337,17 +328,12 @@ fs_open(Ixp9Req *r)
 		}
 		case QQUEUE: {
 			Queue *qn;
-			int buflen;
-			
-			buflen = 0;
-			for(qn = queue; qn; qn=qn->next) {
-				buflen += strlen(qn->song)+1;
-			}
-			if(!(fidaux = newfidaux(buflen))) {
+
+			if(!(fidaux = newfidaux(files[QQUEUE].size))) {
 				respond(r, "out of memory");
 				return;
 			}
-			fidaux->rd.buf.size = buflen;
+			fidaux->rd.buf.size = files[QQUEUE].size;
 			cp = fidaux->rd.buf.data;
 			for(qn = queue; qn; qn=qn->next) {
 				cp += sprintf(cp, "%s\n", qn->song);
@@ -373,11 +359,11 @@ fs_open(Ixp9Req *r)
 				evfids = new;
 			}
 			evfids[nevfids++] = r->fid;
-			if(player_pid == -1) {
+			if(*playing_song == '\0') {
 				sendevent("Stop", r->fid);
 			} else {
 				char buf[512];
-				snprintf(buf, sizeof(buf), "Play %s", current_song);
+				snprintf(buf, sizeof(buf), "Play %s", playing_song);
 				sendevent(buf, r->fid);
 			}
 			break;
@@ -416,6 +402,7 @@ dostat(IxpStat *st, int path)
 	st->qid.path = path;
 	st->mode = files[path].mode;
 	st->name = files[path].name;
+	st->length = files[path].size;
 	st->uid = st->gid = st->muid = "";
 }
 

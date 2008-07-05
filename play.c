@@ -11,7 +11,7 @@
 
 char *player_cmd = "m9uplay";
 
-char current_song[512] = {0};
+char playing_song[512] = {0};
 int player_pid = -1;
 Queue *queue = NULL;
 Playlist playlist;
@@ -30,7 +30,7 @@ stop()
 	postevent("Stop");
 	kill(player_pid, SIGTERM);
 	player_pid = -1;
-	current_song[0] = '\0';
+	playing_song[0] = '\0';
 }
 
 char*
@@ -46,7 +46,7 @@ play(char *song)
 		return NULL;
 	}
 
-	current_song[0] = '\0';
+	playing_song[0] = '\0';
 	switch(player_pid=fork()){
 		case -1:
 			return "fork failed";
@@ -55,7 +55,7 @@ play(char *song)
 			fprintf(stderr, "error execing %s: %s\n", player_cmd, strerror(errno));
 			exit(1);
 		default:
-			snprintf(current_song, sizeof(current_song), "%s", song);
+			snprintf(playing_song, sizeof(playing_song), "%s", song);
 			snprintf(buf, sizeof(buf), "Play %s", song);
 			postevent(buf);
 	}
@@ -70,24 +70,29 @@ skip()
 	kill(player_pid, SIGTERM);
 }
 
-int
+void
 add(char *song)
 {
-	return pladd(&playlist, song);
+	if(pladd(&playlist, song) == 0) {
+		files[QLIST].size += strlen(song) + 1;
+	} else {
+		fprintf(stderr, "m9u: %s: couldn't alloc memory to add song!\n", song);
+	}
 }
 
-char*
+void
 enqueue(char *song)
 {
 	Queue **node, *new;
 	for(node=&queue; *node; node=&(*node)->next);
 
-	if(!(new = malloc(sizeof(Queue))))
-		return "out of memory";
+	if(!(new = malloc(sizeof(Queue)))) {
+		fprintf(stderr, "m9u: %s couldn't alloc memory to queue song!\n", song);
+	}
 	new->song = song;
 	new->next = NULL;
 	*node = new;
-	return NULL;
+	files[QQUEUE].size += strlen(song) + 1;
 }
 
 void
