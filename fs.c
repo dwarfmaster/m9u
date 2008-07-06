@@ -8,11 +8,10 @@
 
 /* 
 0600 /ctl
-	add <file>
 	stop <n>
 	skip <n>
 	play
-0400 /list
+0600 /list
 	list of filenames in playlist, one per line
 0600 /queue
 	list of songs queued up
@@ -26,7 +25,7 @@
 Fileinfo files[QMAX] = {
 	{"", QNONE, P9_QTDIR, 0500|P9_DMDIR, 0},
 	{"ctl", QROOT, P9_QTFILE, 0200, 0},
-	{"list", QROOT, P9_QTFILE, 0400, 0},
+	{"list", QROOT, P9_QTFILE, 0600, 0},
 	{"queue", QROOT, P9_QTFILE, 0600|P9_OAPPEND, 0},
 	{"event", QROOT, P9_QTFILE, 0400, 0}
 };
@@ -54,15 +53,8 @@ dupsong(char *buf, int len)
 char*
 ctlparse(char *line, int len)
 {
-	char *song;
 	/* line is not NUL terminated */
-	/* TODO drop add from ctl, just append to /list instead */
-	if(len > 4 && strncmp(line, "add ", 4) == 0){
-		if(!(song = dupsong(line+4, len-4))){
-			return "out of memory";
-		}
-		add(song);
-	} else if(len >= 4 && strncmp(line, "stop", 4) == 0){
+	if(len >= 4 && strncmp(line, "stop", 4) == 0){
 		/* TODO support stop-after-n-songs */
 		stop();
 	} else if(len >= 4 && strncmp(line, "skip", 4) == 0){
@@ -99,6 +91,8 @@ newfidaux(int buflen)
 		out->rd.ev.blocked = NULL;
 	}
 	out->pre = NULL;
+	out->prelen = 0;
+	out->appendoffset = 0;
 	return out;
 }
 
@@ -192,7 +186,7 @@ fs_open(Ixp9Req *r)
 				respond(r, "out of memory");
 				return;
 			}
-			fidaux->rd.buf.size = files[QLIST].size;
+			fidaux->appendoffset = fidaux->rd.buf.size = files[QLIST].size;
 			cp = fidaux->rd.buf.data;
 			for(i = 0; i < playlist.nsongs; ++i) {
 				cp += sprintf(cp, "%s\n", playlist.songs[i]);
@@ -367,6 +361,49 @@ fs_read(Ixp9Req *r)
 	respond(r, NULL);
 }
 
+static char*
+getln(char **line, Fidaux *fidaux, char **start, char *end)
+{
+	char *nl;
+	int len;
+	nl = memchr(*start, '\n', end-*start);
+	if(!nl) {
+		/* at the end of the buffer */
+		char *new;
+		len = end-*start + fidaux->prelen;
+		if(!(new = realloc(fidaux->pre, len))) {
+			free(fidaux->pre);
+			fidaux->pre = NULL;
+			fidaux->prelen = 0;
+			return "out of memory";
+		}
+		fidaux->pre = new;
+		fidaux->prelen = len;
+		*line = NULL;
+		*start = end+1;
+	} else if(fidaux->pre) {
+		/* at the start of the buffer */
+		len = (nl-*start) + fidaux->prelen;
+		if(!((*line) = malloc(len+1))) {
+			return "out of memory";
+		}
+		memcpy((*line), fidaux->pre, fidaux->prelen);
+		memcpy((*line)+fidaux->prelen, *start, nl-*start);
+		(*line)[len] = '\0';
+		free(fidaux->pre);
+		fidaux->pre = NULL;
+		fidaux->prelen = 0;
+		*start += len;
+	} else {
+		len = nl-*start;
+		if(!(*line = dupsong(*start, len))) {
+			return "out of memory";
+		}
+		*start += len;
+	}
+	return NULL;
+}
+
 void
 fs_write(Ixp9Req *r)
 {
@@ -380,47 +417,37 @@ fs_write(Ixp9Req *r)
 			r->ofcall.count = r->ifcall.count;
 			break;
 		case QQUEUE: {
-			char *start, *end, *song;
-			int len;
+			char *start, *end, *song, *errstr;
 			start = r->ifcall.data;
-			end = memchr(r->ifcall.data, '\n', r->ifcall.count);
-			if(end == NULL) {
-				end = start+r->ifcall.count;
-			}
-			if(fidaux->pre) {
-				len = (end-start) + fidaux->prelen;
-				if(!(song = malloc(len+1))) {
-					respond(r, "out of memory");
+			end = start + r->ifcall.count;
+			do {
+				if((errstr = getln(&song, fidaux, &start, end))) {
+					respond(r, errstr);
 					return;
 				}
-				memcpy(song, fidaux->pre, fidaux->prelen);
-				memcpy(song+fidaux->prelen, start, end-start);
-				song[len] = '\0';
-				enqueue(song);
-				free(fidaux->pre);
-				fidaux->pre = NULL;
-				fidaux->prelen = 0;
-				start = end+1;
-				end = memchr(start, '\n', r->ifcall.count - (start-r->ifcall.data));
-			}
-			while(end) {
-				if(!(song = dupsong(start, end-start))) {
-					respond(r, "out of memory");
-					return;
-				}
-				enqueue(song);
-				start = end+1;
-				end = memchr(start, '\n', r->ifcall.count - (start-r->ifcall.data));
-			}
-			fidaux->prelen = r->ifcall.count - (start-r->ifcall.data);
-			if(fidaux->prelen > 0) {
-				if(!(fidaux->pre = malloc(fidaux->prelen))) {
-					respond(r, "out of memory");
-					return;
-				}
-				memcpy(fidaux->pre, start, fidaux->prelen);
-			}
+				if(song)
+					enqueue(song);
+			} while (start < end);
 			r->ofcall.count = r->ifcall.count;
+		}
+		case QLIST: {
+			if(r->ifcall.offset == fidaux->appendoffset) {
+				char *start, *end, *song, *errstr;
+				start = r->ifcall.data;
+				end = start + r->ifcall.count;
+				do {
+					if((errstr = getln(&song, fidaux, &start, end))) {
+						respond(r, errstr);
+						return;
+					}
+					if(song)
+						add(song);
+				} while (start < end);
+				r->ofcall.count = r->ifcall.count;
+			} else {
+				respond(r, "overwriting not implemented yet :(");
+				return;
+			}
 		}
 	}
 	respond(r, NULL);

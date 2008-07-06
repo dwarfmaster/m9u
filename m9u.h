@@ -58,6 +58,8 @@ struct Fidaux_
 
 	char *pre;
 	int prelen;
+
+	int appendoffset;
 };
 
 extern Fileinfo files[];
