@@ -47,6 +47,7 @@ struct Fidaux_
 		struct {
 			char *data;
 			int size;
+			int max;
 		} buf;
 
 		struct {
@@ -68,11 +69,13 @@ extern int nevfids;
 
 extern int plinit(Playlist*);
 extern int pladd(Playlist*, char*);
+extern void plclear(Playlist*);
 
 extern int init();
 extern void skip();
 extern void stop();
 extern void add(char*);
+extern void clear();
 extern void enqueue(char*);
 extern char* play(char*);
 extern void songends();

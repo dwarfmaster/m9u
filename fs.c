@@ -80,6 +80,7 @@ newfidaux(int buflen)
 		out->rdtype = BUF;
 		out->rd.buf.data = NULL;
 		out->rd.buf.size = buflen;
+		out->rd.buf.max = buflen;
 		if(buflen && !(out->rd.buf.data = malloc(buflen))) {
 			free(out);
 			return NULL;
@@ -186,7 +187,7 @@ fs_open(Ixp9Req *r)
 				respond(r, "out of memory");
 				return;
 			}
-			fidaux->appendoffset = fidaux->rd.buf.size = files[QLIST].size;
+			fidaux->appendoffset = fidaux->rd.buf.size;
 			cp = fidaux->rd.buf.data;
 			for(i = 0; i < playlist.nsongs; ++i) {
 				cp += sprintf(cp, "%s\n", playlist.songs[i]);
@@ -201,7 +202,6 @@ fs_open(Ixp9Req *r)
 				respond(r, "out of memory");
 				return;
 			}
-			fidaux->rd.buf.size = files[QQUEUE].size;
 			cp = fidaux->rd.buf.data;
 			for(qn = queue; qn; qn=qn->next) {
 				cp += sprintf(cp, "%s\n", qn->song);
@@ -241,10 +241,15 @@ fs_open(Ixp9Req *r)
 void
 fs_clunk(Ixp9Req *r)
 {
+	Fidaux *fidaux;
+	fidaux = (Fidaux*)r->fid->aux;
+	if (!fidaux) {
+		respond(r, NULL);
+		return;
+	}
 	switch(r->fid->qid.path) {
 		case QQUEUE: {
 			char *song;
-			Fidaux *fidaux = (Fidaux*)r->fid->aux;
 			if(fidaux->pre) {
 				if((song = dupsong(fidaux->pre, fidaux->prelen))) {
 					enqueue(song);
@@ -252,11 +257,34 @@ fs_clunk(Ixp9Req *r)
 				free(fidaux->pre);
 				fidaux->pre = NULL;
 			}
+			break;
+		}
+		case QLIST: {
+			char *song;
+			if(fidaux->pre) {
+				if((song = dupsong(fidaux->pre, fidaux->prelen))) {
+					add(song);
+				}
+				free(fidaux->pre);
+				fidaux->pre = NULL;
+			}
+			if(fidaux->appendoffset == -1) {
+				char *cp, *end, *eob;
+				clear();
+				eob = fidaux->rd.buf.data + fidaux->rd.buf.size;
+				for(end=cp=fidaux->rd.buf.data; cp < eob; cp=end+1) {
+					if(!(end = memchr(cp, '\n', eob-cp))) {
+						end = eob;
+					}
+					if((song = dupsong(cp, end-cp))) {
+						add(song);
+					}
+				}
+			}
+			break;
 		}
 	}
-	if((r->fid->aux)) {
-		freefidaux(r->fid);
-	}
+	freefidaux(r->fid);
 	respond(r, NULL);
 }
 
@@ -446,8 +474,30 @@ fs_write(Ixp9Req *r)
 				} while (start < end);
 				r->ofcall.count = r->ifcall.count;
 			} else {
-				respond(r, "overwriting not implemented yet :(");
-				return;
+				fidaux->appendoffset = -1;
+				/*if(!fidaux->rd.buf.data) {
+					initlistbuf(fidaux, 1.2);
+				}*/
+				if(r->ifcall.offset + r->ifcall.count > fidaux->rd.buf.max) {
+					int newmax;
+					char *newbuf;
+
+					newmax = fidaux->rd.buf.max * 2;
+					if((newbuf = realloc(fidaux->rd.buf.data, newmax))) {
+						memset(newbuf+fidaux->rd.buf.max, '\0', newmax-fidaux->rd.buf.max);
+						free(fidaux->rd.buf.data);
+						fidaux->rd.buf.data = newbuf;
+						fidaux->rd.buf.max = newmax;
+					} else {
+						respond(r, "out of memory");
+						return;
+					}
+				}
+				memcpy(fidaux->rd.buf.data + r->ifcall.offset, r->ifcall.data, r->ifcall.count);
+				if(r->ifcall.offset + r->ifcall.count > fidaux->rd.buf.size) {
+					fidaux->rd.buf.size = r->ifcall.offset + r->ifcall.count;
+				}
+				r->ofcall.count = r->ifcall.count;
 			}
 			break;
 		}

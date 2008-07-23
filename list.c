@@ -30,3 +30,13 @@ pladd(Playlist *pl, char *song)
 	pl->songs[pl->nsongs++] = song;
 	return 0;
 }
+
+void
+plclear(Playlist *pl)
+{
+	int i;
+	for(i=0; i<pl->nsongs; ++i) {
+		free(pl->songs[i]);
+	}
+	pl->nsongs = 0;
+}

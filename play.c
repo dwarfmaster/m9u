@@ -81,6 +81,13 @@ add(char *song)
 }
 
 void
+clear()
+{
+	plclear(&playlist);
+	files[QLIST].size = 0;
+}
+
+void
 enqueue(char *song)
 {
 	Queue **node, *new;
