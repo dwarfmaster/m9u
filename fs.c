@@ -429,6 +429,7 @@ fs_write(Ixp9Req *r)
 					enqueue(song);
 			} while (start < end);
 			r->ofcall.count = r->ifcall.count;
+			break;
 		}
 		case QLIST: {
 			if(r->ifcall.offset == fidaux->appendoffset) {
@@ -448,6 +449,7 @@ fs_write(Ixp9Req *r)
 				respond(r, "overwriting not implemented yet :(");
 				return;
 			}
+			break;
 		}
 	}
 	respond(r, NULL);
