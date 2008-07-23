@@ -393,13 +393,13 @@ getln(char **line, Fidaux *fidaux, char **start, char *end)
 		free(fidaux->pre);
 		fidaux->pre = NULL;
 		fidaux->prelen = 0;
-		*start += len;
+		*start += len+1;
 	} else {
 		len = nl-*start;
 		if(!(*line = dupsong(*start, len))) {
 			return "out of memory";
 		}
-		*start += len;
+		*start += len+1;
 	}
 	return NULL;
 }
