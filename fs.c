@@ -70,27 +70,37 @@ ctlparse(char *line, int len)
 }
 
 Fidaux*
-newfidaux(int buflen)
+newbufaux(int buflen)
 {
 	Fidaux *out;
 	if(!(out = malloc(sizeof(Fidaux)))) {
 		return NULL;
 	}
-	if(buflen >= 0) {
-		out->rdtype = BUF;
-		out->rd.buf.data = NULL;
-		out->rd.buf.size = buflen;
-		out->rd.buf.max = buflen;
-		if(buflen && !(out->rd.buf.data = malloc(buflen))) {
-			free(out);
-			return NULL;
-		}
-	} else {
-		out->rdtype = EVENT;
-		out->rd.ev.list = NULL;
-		out->rd.ev.offset = 0;
-		out->rd.ev.blocked = NULL;
+	out->rdtype = BUF;
+	out->rd.buf.data = NULL;
+	out->rd.buf.size = buflen;
+	out->rd.buf.max = buflen;
+	if(buflen && !(out->rd.buf.data = malloc(buflen))) {
+		free(out);
+		return NULL;
 	}
+	out->pre = NULL;
+	out->prelen = 0;
+	out->appendoffset = 0;
+	return out;
+}
+
+Fidaux*
+newevaux()
+{
+	Fidaux *out;
+	if(!(out = malloc(sizeof(Fidaux)))) {
+		return NULL;
+	}
+	out->rdtype = EVENT;
+	out->rd.ev.list = NULL;
+	out->rd.ev.offset = 0;
+	out->rd.ev.blocked = NULL;
 	out->pre = NULL;
 	out->prelen = 0;
 	out->appendoffset = 0;
@@ -183,7 +193,7 @@ fs_open(Ixp9Req *r)
 		case QLIST: {
 			int i;
 
-			if(!(fidaux = newfidaux(files[QLIST].size))) {
+			if(!(fidaux = newbufaux(files[QLIST].size))) {
 				respond(r, "out of memory");
 				return;
 			}
@@ -198,7 +208,7 @@ fs_open(Ixp9Req *r)
 		case QQUEUE: {
 			Queue *qn;
 
-			if(!(fidaux = newfidaux(files[QQUEUE].size))) {
+			if(!(fidaux = newbufaux(files[QQUEUE].size))) {
 				respond(r, "out of memory");
 				return;
 			}
@@ -210,7 +220,7 @@ fs_open(Ixp9Req *r)
 			break;
 		}
 		case QEVENT: {
-			if(!(fidaux = newfidaux(0))) {
+			if(!(fidaux = newevaux())) {
 				respond(r, "out of memory");
 				return;
 			}

@@ -55,11 +55,12 @@ newevent(char *fmt, va_list ap)
 	Event *ev;
 	int len;
 	if((ev = malloc(sizeof(Event)))) {
-		len = vsnprintf(NULL, 0, fmt, ap) + 1;
+		len = vsnprintf(NULL, 0, fmt, ap);
 		if((ev->event = malloc(len+2))) {
 			vsnprintf(ev->event, len+1, fmt, ap);
 			ev->event[len+1-1] = '\n';
 			ev->event[len+2-1] = '\0';
+			ev->refcount = 0;
 			ev->next = NULL;
 			return ev;
 		} else {
