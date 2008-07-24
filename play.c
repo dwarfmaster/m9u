@@ -118,7 +118,8 @@ songends()
 		play(node->song);
 		free(node);
 	}else if(playlist.nsongs > 0){
-		/* TODO proper shuffled list */
-		play(playlist.songs[rand()%playlist.nsongs]);
+		++playlist.current;
+		playlist.current %= playlist.nsongs;
+		play(playlist.songs[playlist.current]);
 	}
 }

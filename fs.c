@@ -405,6 +405,7 @@ getln(char **line, Fidaux *fidaux, char **start, char *end)
 			fidaux->prelen = 0;
 			return "out of memory";
 		}
+		memcpy(new, *start, len);
 		fidaux->pre = new;
 		fidaux->prelen = len;
 		*line = NULL;
@@ -421,7 +422,7 @@ getln(char **line, Fidaux *fidaux, char **start, char *end)
 		free(fidaux->pre);
 		fidaux->pre = NULL;
 		fidaux->prelen = 0;
-		*start += len+1;
+		*start += (nl-*start)+1;
 	} else {
 		len = nl-*start;
 		if(!(*line = dupsong(*start, len))) {
@@ -472,6 +473,7 @@ fs_write(Ixp9Req *r)
 					if(song)
 						add(song);
 				} while (start < end);
+				fidaux->appendoffset += r->ifcall.count;
 				r->ofcall.count = r->ifcall.count;
 			} else {
 				fidaux->appendoffset = -1;
@@ -483,6 +485,9 @@ fs_write(Ixp9Req *r)
 					char *newbuf;
 
 					newmax = fidaux->rd.buf.max * 2;
+					if(!newmax) {
+						newmax = 16384;
+					}
 					if((newbuf = realloc(fidaux->rd.buf.data, newmax))) {
 						memset(newbuf+fidaux->rd.buf.max, '\0', newmax-fidaux->rd.buf.max);
 						free(fidaux->rd.buf.data);

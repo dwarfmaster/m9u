@@ -10,7 +10,7 @@ $o.m9u: $(OBJ)
 %.$o: %.c m9u.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-install:
+install: $o.m9u
 	mkdir -p $(prefix)/bin
 	install $o.m9u $(prefix)/bin/m9u
 	install m9uplay $(prefix)/bin
