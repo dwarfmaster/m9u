@@ -29,7 +29,7 @@ stop()
 {
 	if(player_pid == -1)
 		return;
-	putevent(NULL, "Stop");
+	putevent(NULL, "Stop %s", playlist.songs[playlist.current]);
 	kill(player_pid, SIGTERM);
 	player_pid = -1;
 	playing_song[0] = '\0';
@@ -42,9 +42,7 @@ play(char *song)
 		return "already playing";
 	}
 	if(song == NULL){
-		player_pid = 0;
-		songends();
-		return NULL;
+		song = playlist.songs[playlist.current];
 	}
 
 	playing_song[0] = '\0';
@@ -63,10 +61,21 @@ play(char *song)
 }
 
 void
-skip()
+skip(int n)
 {
-	if(player_pid == -1)
+	playlist.current += n;
+	if(player_pid != -1) {
+		--playlist.current;
+	}
+	if(playlist.current < 0) {
+		playlist.current = playlist.nsongs + playlist.current;
+	} else {
+		playlist.current %= playlist.nsongs;
+	}
+	if(player_pid == -1) {
+		putevent(NULL, "Stop %s", playlist.songs[playlist.current]);
 		return;
+	}
 	kill(player_pid, SIGTERM);
 }
 

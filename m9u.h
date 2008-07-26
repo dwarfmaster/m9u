@@ -72,7 +72,7 @@ extern int pladd(Playlist*, char*);
 extern void plclear(Playlist*);
 
 extern int init();
-extern void skip();
+extern void skip(int n);
 extern void stop();
 extern void add(char*);
 extern void clear();

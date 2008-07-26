@@ -58,9 +58,13 @@ ctlparse(char *line, int len)
 		/* TODO support stop-after-n-songs */
 		stop();
 	} else if(len >= 4 && strncmp(line, "skip", 4) == 0){
-		/* TODO support skip-n-songs */
-		/* NOTE: stop() then play(NULL) doesn't work because we don't handle the child death event until after this Twrite is finished with */
-		skip();
+		int n;
+		if(len >= 6) {
+			n = atoi(line+5);
+		} else {
+			n = 1;
+		}
+		skip(n);
 	} else if(len >= 4 && strncmp(line, "play", 4) == 0){
 		play(NULL);
 	} else {
@@ -238,7 +242,7 @@ fs_open(Ixp9Req *r)
 			}
 			evfids[nevfids++] = r->fid;
 			if(*playing_song == '\0') {
-				putevent(r->fid, "Stop");
+				putevent(r->fid, "Stop %s");
 			} else {
 				putevent(r->fid, "Play %s", playing_song);
 			}
