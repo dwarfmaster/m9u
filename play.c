@@ -64,7 +64,7 @@ void
 skip(int n)
 {
 	playlist.current += n;
-	if(player_pid != -1) {
+	if(player_pid != -1 && !queue) {
 		--playlist.current;
 	}
 	if(playlist.current < 0) {
