@@ -154,7 +154,7 @@ fs_attach(Ixp9Req *r)
 {
 	r->fid->qid.type = files[QROOT].type;
 	r->fid->qid.path = QROOT;
-	r->ofcall.qid = r->fid->qid;
+	r->ofcall.rattach.qid = r->fid->qid;
 	respond(r, NULL);
 }
 
@@ -166,21 +166,21 @@ fs_walk(Ixp9Req *r)
 	int i, j;
 
 	cwd = r->fid->qid.path;
-	r->ofcall.nwqid = 0;
-	for(i = 0; i < r->ifcall.nwname; ++i){
+	r->ofcall.rwalk.nwqid = 0;
+	for(i = 0; i < r->ifcall.twalk.nwname; ++i){
 		for(j = 0; j < QMAX; ++j){
-			if(files[j].parent == cwd && strcmp(files[j].name, r->ifcall.wname[i]) == 0)
+			if(files[j].parent == cwd && strcmp(files[j].name, r->ifcall.twalk.wname[i]) == 0)
 				break;
 		}
 		if(j >= QMAX){
-			snprintf(buf, sizeof(buf), "%s: no such file or directory", r->ifcall.wname[i]);
+			snprintf(buf, sizeof(buf), "%s: no such file or directory", r->ifcall.twalk.wname[i]);
 			respond(r, buf);
 			return;
 		}
-		r->ofcall.wqid[r->ofcall.nwqid].type = files[j].type;
-		r->ofcall.wqid[r->ofcall.nwqid].path = j;
-		r->ofcall.wqid[r->ofcall.nwqid].version = 0;
-		++r->ofcall.nwqid;
+		r->ofcall.rwalk.wqid[r->ofcall.rwalk.nwqid].type = files[j].type;
+		r->ofcall.rwalk.wqid[r->ofcall.rwalk.nwqid].path = j;
+		r->ofcall.rwalk.wqid[r->ofcall.rwalk.nwqid].version = 0;
+		++r->ofcall.rwalk.nwqid;
 	}
 	respond(r, NULL);
 }
@@ -324,13 +324,13 @@ fs_stat(Ixp9Req *r)
 	dostat(&st, r->fid->qid.path);
 	m = ixp_message(buf, sizeof(buf), MsgPack);
 	ixp_pstat(&m, &st);
-	r->ofcall.nstat = ixp_sizeof_stat(&st);
-	if(!(r->ofcall.stat = malloc(r->ofcall.nstat))) {
-		r->ofcall.nstat = 0;
+	r->ofcall.rstat.nstat = ixp_sizeof_stat(&st);
+	if(!(r->ofcall.rstat.stat = malloc(r->ofcall.rstat.nstat))) {
+		r->ofcall.rstat.nstat = 0;
 		respond(r, "out of memory");
 		return;
 	}
-	memcpy(r->ofcall.stat, m.data, r->ofcall.nstat);
+	memcpy(r->ofcall.rstat.stat, m.data, r->ofcall.rstat.nstat);
 	respond(r, NULL);
 }
 
@@ -346,8 +346,8 @@ fs_read(Ixp9Req *r)
 
 		m = ixp_message(buf, sizeof(buf), MsgPack);
 
-		r->ofcall.count = 0;
-		if(r->ifcall.offset > 0) {
+		r->ofcall.rread.count = 0;
+		if(r->ifcall.tread.offset > 0) {
 			/* hack! assuming the whole directory fits in a single Rread */
 			respond(r, NULL);
 			return;
@@ -356,32 +356,32 @@ fs_read(Ixp9Req *r)
 			if(files[i].parent == r->fid->qid.path){
 				dostat(&st, i);
 				ixp_pstat(&m, &st);
-				r->ofcall.count += ixp_sizeof_stat(&st);
+				r->ofcall.rread.count += ixp_sizeof_stat(&st);
 			}
 		}
-		if(!(r->ofcall.data = malloc(r->ofcall.count))) {
-			r->ofcall.count = 0;
+		if(!(r->ofcall.rread.data = malloc(r->ofcall.rread.count))) {
+			r->ofcall.rread.count = 0;
 			respond(r, "out of memory");
 			return;
 		}
-		memcpy(r->ofcall.data, m.data, r->ofcall.count);
+		memcpy(r->ofcall.rread.data, m.data, r->ofcall.rread.count);
 		respond(r, NULL);
 		return;
 	}
 
 	if((fidaux = (Fidaux*)r->fid->aux)) {
-		if(fidaux->rdtype == BUF && r->ifcall.offset < fidaux->rd.buf.size) {
-			if(r->ifcall.offset + r->ifcall.count > fidaux->rd.buf.size) {
-				r->ofcall.count = fidaux->rd.buf.size - r->ifcall.offset;
+		if(fidaux->rdtype == BUF && r->ifcall.tread.offset < fidaux->rd.buf.size) {
+			if(r->ifcall.tread.offset + r->ifcall.tread.count > fidaux->rd.buf.size) {
+				r->ofcall.rread.count = fidaux->rd.buf.size - r->ifcall.tread.offset;
 			} else {
-				r->ofcall.count = r->ifcall.count;
+				r->ofcall.rread.count = r->ifcall.tread.count;
 			}
-			if(!(r->ofcall.data = malloc(r->ofcall.count))) {
-				r->ofcall.count = 0;
+			if(!(r->ofcall.rread.data = malloc(r->ofcall.rread.count))) {
+				r->ofcall.rread.count = 0;
 				respond(r, "out of memory");
 				return;
 			}
-			memcpy(r->ofcall.data, fidaux->rd.buf.data+r->ifcall.offset, r->ofcall.count);
+			memcpy(r->ofcall.rread.data, fidaux->rd.buf.data+r->ifcall.tread.offset, r->ofcall.rread.count);
 			respond(r, NULL);
 			return;
 		} else if(fidaux->rdtype == EVENT) {
@@ -456,13 +456,13 @@ fs_write(Ixp9Req *r)
 		case QCTL:
 			/* TODO allow multiple messages in a single write, one per line */
 			/* TODO return proper error string on failure */
-			ctlparse(r->ifcall.data, r->ifcall.count);
-			r->ofcall.count = r->ifcall.count;
+			ctlparse(r->ifcall.twrite.data, r->ifcall.twrite.count);
+			r->ofcall.rwrite.count = r->ifcall.twrite.count;
 			break;
 		case QQUEUE: {
 			char *start, *end, *song, *errstr;
-			start = r->ifcall.data;
-			end = start + r->ifcall.count;
+			start = r->ifcall.twrite.data;
+			end = start + r->ifcall.twrite.count;
 			do {
 				if((errstr = getln(&song, fidaux, &start, end))) {
 					respond(r, errstr);
@@ -471,14 +471,14 @@ fs_write(Ixp9Req *r)
 				if(song)
 					enqueue(song);
 			} while (start < end);
-			r->ofcall.count = r->ifcall.count;
+			r->ofcall.rwrite.count = r->ifcall.twrite.count;
 			break;
 		}
 		case QLIST: {
-			if(r->ifcall.offset == fidaux->appendoffset) {
+			if(r->ifcall.twrite.offset == fidaux->appendoffset) {
 				char *start, *end, *song, *errstr;
-				start = r->ifcall.data;
-				end = start + r->ifcall.count;
+				start = r->ifcall.twrite.data;
+				end = start + r->ifcall.twrite.count;
 				do {
 					if((errstr = getln(&song, fidaux, &start, end))) {
 						respond(r, errstr);
@@ -487,14 +487,14 @@ fs_write(Ixp9Req *r)
 					if(song)
 						add(song);
 				} while (start < end);
-				fidaux->appendoffset += r->ifcall.count;
-				r->ofcall.count = r->ifcall.count;
+				fidaux->appendoffset += r->ifcall.twrite.count;
+				r->ofcall.rwrite.count = r->ifcall.twrite.count;
 			} else {
 				fidaux->appendoffset = -1;
 				/*if(!fidaux->rd.buf.data) {
 					initlistbuf(fidaux, 1.2);
 				}*/
-				if(r->ifcall.offset + r->ifcall.count > fidaux->rd.buf.max) {
+				if(r->ifcall.twrite.offset + r->ifcall.twrite.count > fidaux->rd.buf.max) {
 					int newmax;
 					char *newbuf;
 
@@ -512,11 +512,11 @@ fs_write(Ixp9Req *r)
 						return;
 					}
 				}
-				memcpy(fidaux->rd.buf.data + r->ifcall.offset, r->ifcall.data, r->ifcall.count);
-				if(r->ifcall.offset + r->ifcall.count > fidaux->rd.buf.size) {
-					fidaux->rd.buf.size = r->ifcall.offset + r->ifcall.count;
+				memcpy(fidaux->rd.buf.data + r->ifcall.twrite.offset, r->ifcall.twrite.data, r->ifcall.twrite.count);
+				if(r->ifcall.twrite.offset + r->ifcall.twrite.count > fidaux->rd.buf.size) {
+					fidaux->rd.buf.size = r->ifcall.twrite.offset + r->ifcall.twrite.count;
 				}
-				r->ofcall.count = r->ifcall.count;
+				r->ofcall.rwrite.count = r->ifcall.twrite.count;
 			}
 			break;
 		}
