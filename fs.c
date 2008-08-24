@@ -524,6 +524,12 @@ fs_write(Ixp9Req *r)
 	respond(r, NULL);
 }
 
+void
+fs_wstat(Ixp9Req *r)
+{
+	respond(r, NULL); /* pretend it worked */
+}
+
 Ixp9Srv p9srv = {
 	.open=fs_open,
 	.clunk=fs_clunk,
@@ -531,5 +537,6 @@ Ixp9Srv p9srv = {
 	.read=fs_read,
 	.stat=fs_stat,
 	.write=fs_write,
+	.wstat=fs_wstat,
 	.attach=fs_attach
 };
