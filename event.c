@@ -88,11 +88,13 @@ putevent(IxpFid *fid, char *fmt, ...)
 	if(!ev)
 		return;
 
+	ev->refcount = nevfids;
 	for(i = 0; i < nevfids; ++i) {
-		if(fid && evfids[i] != fid)
+		if(fid && evfids[i] != fid) {
+			--ev->refcount;
 			continue;
+		}
 
-		++ev->refcount;
 		fidaux = (Fidaux*)evfids[i]->aux;
 		for(pev = &fidaux->rd.ev.list; *pev; pev = &(*pev)->next);
 		*pev = ev;
