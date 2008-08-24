@@ -10,19 +10,19 @@
 static int
 dispatch(Ixp9Req *r, char *event, int len)
 {
-	if(len > r->ifcall.count) {
-		r->ofcall.count = r->ifcall.count;
+	if(len > r->ifcall.rread.count) {
+		r->ofcall.rread.count = r->ifcall.tread.count;
 	} else {
-		r->ofcall.count = len;
+		r->ofcall.rread.count = len;
 	}
-	if(!(r->ofcall.data = malloc(r->ofcall.count))) {
-		r->ofcall.count = 0;
+	if(!(r->ofcall.rread.data = malloc(r->ofcall.rread.count))) {
+		r->ofcall.rread.count = 0;
 		respond(r, "out of memory");
 		return 0;
 	}
-	memcpy(r->ofcall.data, event, r->ofcall.count);
+	memcpy(r->ofcall.rread.data, event, r->ofcall.rread.count);
 	respond(r, NULL);
-	return r->ofcall.count;
+	return r->ofcall.rread.count;
 }
 
 void
