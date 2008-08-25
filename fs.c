@@ -412,18 +412,20 @@ getln(char **line, Fidaux *fidaux, char **start, char *end)
 	if(!nl) {
 		/* at the end of the buffer */
 		char *new;
-		len = end-*start + fidaux->prelen;
-		if(!(new = realloc(fidaux->pre, len))) {
-			free(fidaux->pre);
-			fidaux->pre = NULL;
-			fidaux->prelen = 0;
-			return "out of memory";
-		}
-		memcpy(new, *start, len);
-		fidaux->pre = new;
-		fidaux->prelen = len;
 		*line = NULL;
 		*start = end+1;
+		len = end-*start;
+		if(len > 0) {
+			if(!(new = realloc(fidaux->pre, len))) {
+				free(fidaux->pre);
+				fidaux->pre = NULL;
+				fidaux->prelen = 0;
+				return "out of memory";
+			}
+			memcpy(new, *start, len);
+			fidaux->pre = new;
+			fidaux->prelen = len;
+		}
 	} else if(fidaux->pre) {
 		/* at the start of the buffer */
 		len = (nl-*start) + fidaux->prelen;
