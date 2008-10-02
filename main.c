@@ -1,8 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <err.h>
+#include <errno.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -40,7 +42,11 @@ main(int argc, char **arv)
 
 	address = getenv("IXP_ADDRESS");
 	if(!address) {
-		snprintf(buf, sizeof(buf), "unix!%s/m9u", ixp_namespace());
+		char *nsdir = ixp_namespace();
+		if(mkdir(nsdir, 0700) == -1 && errno != EEXIST) {
+			err(1, "mkdir: %s", nsdir);
+		}
+		snprintf(buf, sizeof(buf), "unix!%s/m9u", nsdir);
 		address = buf;
 	}
 
