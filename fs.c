@@ -413,7 +413,6 @@ getln(char **line, Fidaux *fidaux, char **start, char *end)
 		/* at the end of the buffer */
 		char *new;
 		*line = NULL;
-		*start = end+1;
 		len = end-*start;
 		if(len > 0) {
 			if(!(new = realloc(fidaux->pre, len))) {
@@ -426,6 +425,7 @@ getln(char **line, Fidaux *fidaux, char **start, char *end)
 			fidaux->pre = new;
 			fidaux->prelen = len;
 		}
+		*start = end+1;
 	} else if(fidaux->pre) {
 		/* at the start of the buffer */
 		len = (nl-*start) + fidaux->prelen;
