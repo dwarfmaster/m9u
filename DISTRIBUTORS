@@ -1,0 +1,15 @@
+ m9u is a little awkward to package, because it doesn't actually do anything
+with the music. m9u works with a list of files, and relies on other binaries
+to decode and play them (hey, it's the UNIX way ;) ).
+ m9u uses a script (m9play) to decide what player is appropriate for a given
+file. There's no magic involved - the script is simple because it is tied to
+a specific environment (in this case, my environment: a mish-mash of command
+line players with an ALSA backend).
+ Closely related is the m9title script, which is not used by m9u itself, but
+is useful for anything listening to /event. m9title's responsibility is that
+of providing a mapping from filename to "presentable title".
+ Anyway, what I'm getting at is these scripts should be changed to match the
+environment they are installed in. One day I might include several different
+implementations in the distribution, but for the moment I'm leaving the task
+to the user/distributor.
+-sqweek
