@@ -242,7 +242,7 @@ fs_open(Ixp9Req *r)
 			}
 			evfids[nevfids++] = r->fid;
 			if(*playing_song == '\0') {
-				putevent(r->fid, "Stop %s");
+				putevent(r->fid, "Stop %s", playlist.songs[playlist.current]);
 			} else {
 				putevent(r->fid, "Play %s", playing_song);
 			}
