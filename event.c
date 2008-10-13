@@ -1,3 +1,6 @@
+/* © 2008 sqweek <sqweek@gmail.com>
+ * See COPYING for details.
+ */
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
