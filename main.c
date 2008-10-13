@@ -3,6 +3,7 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <err.h>
 #include <errno.h>
 #include <unistd.h>
@@ -35,15 +36,35 @@ playerdeath(IxpConn *conn)
 	songends();
 }
 
+#define GETARG() (cp-*argv == strlen(*argv)-1) ? *++argv : cp+1
+
 int
-main(int argc, char **arv)
+main(int argc, char **argv)
 {
 	IxpServer srv = {0};
-	char *address, buf[512];
+	char *address, *player = NULL, *cp, buf[512];
 	sigset_t sigs;
 	int fd, i;
 
 	address = getenv("IXP_ADDRESS");
+	while(*++argv) {
+		if(strcmp(*argv, "--") == 0 || !(**argv == '-')) {
+			break;
+		}
+		for(cp=*argv+1; cp<*argv+strlen(*argv); ++cp) {
+			if(*cp == 'a') {
+				address = GETARG();
+				break;
+			} else if(*cp == 'p') {
+				player = GETARG();
+				break;
+			} else if (*cp == 'h') {
+				errx(1, "usage: m9u [ -a ADDRESS ] [ -p PLAYER ]");
+			} else {
+				errx(1, "unrecognised option: -%c", *cp);
+			}
+		}
+	}
 	if(!address) {
 		char *nsdir = ixp_namespace();
 		if(mkdir(nsdir, 0700) == -1 && errno != EEXIST) {
@@ -69,7 +90,7 @@ main(int argc, char **arv)
 	ixp_listen(&srv, fd, &p9srv, serve_9pcon, NULL);
 	ixp_listen(&srv, chldpipe[0], NULL, playerdeath, NULL);
 
-	if(init() != 0) {
+	if(init(player) != 0) {
 		errx(1, "initialisation failed");
 	}
 

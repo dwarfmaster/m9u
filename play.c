@@ -22,8 +22,11 @@ Queue *queue = NULL;
 Playlist playlist;
 
 int
-init()
+init(char *player)
 {
+	if(player) {
+		player_cmd = player;
+	}
 	return plinit(&playlist);
 }
 
