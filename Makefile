@@ -12,8 +12,8 @@ m9u: $(OBJ)
 install: m9u
 	mkdir -p $(prefix)/bin
 	install m9u $(prefix)/bin/m9u
-	install m9uplay $(prefix)/bin
-	install m9utitle $(prefix)/bin
+	install m9play $(prefix)/bin
+	install m9title $(prefix)/bin
 
 clean:
 	rm -f $(OBJ) m9u

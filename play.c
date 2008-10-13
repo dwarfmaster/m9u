@@ -11,7 +11,7 @@
 
 #include "m9u.h"
 
-char *player_cmd = "m9uplay";
+char *player_cmd = "m9play";
 
 char playing_song[512] = {0};
 int player_pid = -1;
