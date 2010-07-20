@@ -57,8 +57,11 @@ newevent(char *fmt, va_list ap)
 {
 	Event *ev;
 	int len;
+	va_list ap2;
 	if((ev = malloc(sizeof(Event)))) {
-		len = vsnprintf(NULL, 0, fmt, ap);
+		va_copy(ap2, ap);
+		len = vsnprintf(NULL, 0, fmt, ap2);
+		va_end(ap2);
 		if((ev->event = malloc(len+2))) {
 			vsnprintf(ev->event, len+1, fmt, ap);
 			ev->event[len+1-1] = '\n';
@@ -70,7 +73,7 @@ newevent(char *fmt, va_list ap)
 			free(ev);
 		}
 	}
-	fprintf(stderr, "m9u: couldn't alloc %d+%d bytes for event!\n", sizeof(Event), len+2);
+	fprintf(stderr, "m9u: couldn't alloc %d+%d bytes for event!\n", (int)sizeof(Event), len+2);
 	return NULL;
 }
 
