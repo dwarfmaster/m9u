@@ -75,7 +75,7 @@ skip(int n)
 	}
 	if(playlist.current < 0) {
 		playlist.current = playlist.nsongs + playlist.current;
-	} else {
+	} else if(playlist.nsongs > 0) {
 		playlist.current %= playlist.nsongs;
 	}
 	if(player_pid == -1) {
