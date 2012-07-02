@@ -20,11 +20,11 @@ dispatch(Ixp9Req *r, char *event, int len)
 	}
 	if(!(r->ofcall.rread.data = malloc(r->ofcall.rread.count))) {
 		r->ofcall.rread.count = 0;
-		respond(r, "out of memory");
+		ixp_respond(r, "out of memory");
 		return 0;
 	}
 	memcpy(r->ofcall.rread.data, event, r->ofcall.rread.count);
-	respond(r, NULL);
+	ixp_respond(r, NULL);
 	return r->ofcall.rread.count;
 }
 

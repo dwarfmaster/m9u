@@ -87,7 +87,7 @@ main(int argc, char **argv)
 		err(1, "ixp_announce");
 	}
 
-	ixp_listen(&srv, fd, &p9srv, serve_9pcon, NULL);
+	ixp_listen(&srv, fd, &p9srv, ixp_serve9conn, NULL);
 	ixp_listen(&srv, chldpipe[0], NULL, playerdeath, NULL);
 
 	if(init(player) != 0) {

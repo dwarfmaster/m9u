@@ -158,7 +158,7 @@ fs_attach(Ixp9Req *r)
 	r->fid->qid.type = files[QROOT].type;
 	r->fid->qid.path = QROOT;
 	r->ofcall.rattach.qid = r->fid->qid;
-	respond(r, NULL);
+	ixp_respond(r, NULL);
 }
 
 void
@@ -177,7 +177,7 @@ fs_walk(Ixp9Req *r)
 		}
 		if(j >= QMAX){
 			snprintf(buf, sizeof(buf), "%s: no such file or directory", r->ifcall.twalk.wname[i]);
-			respond(r, buf);
+			ixp_respond(r, buf);
 			return;
 		}
 		r->ofcall.rwalk.wqid[r->ofcall.rwalk.nwqid].type = files[j].type;
@@ -185,7 +185,7 @@ fs_walk(Ixp9Req *r)
 		r->ofcall.rwalk.wqid[r->ofcall.rwalk.nwqid].version = 0;
 		++r->ofcall.rwalk.nwqid;
 	}
-	respond(r, NULL);
+	ixp_respond(r, NULL);
 }
 
 void
@@ -201,7 +201,7 @@ fs_open(Ixp9Req *r)
 			int i;
 
 			if(!(fidaux = newbufaux(files[QLIST].size))) {
-				respond(r, "out of memory");
+				ixp_respond(r, "out of memory");
 				return;
 			}
 			fidaux->appendoffset = fidaux->rd.buf.size;
@@ -216,7 +216,7 @@ fs_open(Ixp9Req *r)
 			Queue *qn;
 
 			if(!(fidaux = newbufaux(files[QQUEUE].size))) {
-				respond(r, "out of memory");
+				ixp_respond(r, "out of memory");
 				return;
 			}
 			cp = fidaux->rd.buf.data;
@@ -228,7 +228,7 @@ fs_open(Ixp9Req *r)
 		}
 		case QEVENT: {
 			if(!(fidaux = newevaux())) {
-				respond(r, "out of memory");
+				ixp_respond(r, "out of memory");
 				return;
 			}
 			r->fid->aux = fidaux;
@@ -237,7 +237,7 @@ fs_open(Ixp9Req *r)
 				int n;
 				n = maxevfids ? maxevfids*2 : 8;
 				if(!(new = realloc(evfids, n*sizeof(IxpFid*)))) {
-					respond(r, "out of memory");
+					ixp_respond(r, "out of memory");
 					return;
 				}
 				maxevfids = n;
@@ -256,7 +256,7 @@ fs_open(Ixp9Req *r)
 			break;
 		}
 	}
-	respond(r, NULL);
+	ixp_respond(r, NULL);
 }
 
 void
@@ -265,7 +265,7 @@ fs_clunk(Ixp9Req *r)
 	Fidaux *fidaux;
 	fidaux = (Fidaux*)r->fid->aux;
 	if (!fidaux) {
-		respond(r, NULL);
+		ixp_respond(r, NULL);
 		return;
 	}
 	switch(r->fid->qid.path) {
@@ -306,7 +306,7 @@ fs_clunk(Ixp9Req *r)
 		}
 	}
 	freefidaux(r->fid);
-	respond(r, NULL);
+	ixp_respond(r, NULL);
 }
 
 void
@@ -334,11 +334,11 @@ fs_stat(Ixp9Req *r)
 	r->ofcall.rstat.nstat = ixp_sizeof_stat(&st);
 	if(!(r->ofcall.rstat.stat = malloc(r->ofcall.rstat.nstat))) {
 		r->ofcall.rstat.nstat = 0;
-		respond(r, "out of memory");
+		ixp_respond(r, "out of memory");
 		return;
 	}
 	memcpy(r->ofcall.rstat.stat, m.data, r->ofcall.rstat.nstat);
-	respond(r, NULL);
+	ixp_respond(r, NULL);
 }
 
 void
@@ -356,7 +356,7 @@ fs_read(Ixp9Req *r)
 		r->ofcall.rread.count = 0;
 		if(r->ifcall.tread.offset > 0) {
 			/* hack! assuming the whole directory fits in a single Rread */
-			respond(r, NULL);
+			ixp_respond(r, NULL);
 			return;
 		}
 		for(i = 0; i < QMAX; ++i){
@@ -368,11 +368,11 @@ fs_read(Ixp9Req *r)
 		}
 		if(!(r->ofcall.rread.data = malloc(r->ofcall.rread.count))) {
 			r->ofcall.rread.count = 0;
-			respond(r, "out of memory");
+			ixp_respond(r, "out of memory");
 			return;
 		}
 		memcpy(r->ofcall.rread.data, m.data, r->ofcall.rread.count);
-		respond(r, NULL);
+		ixp_respond(r, NULL);
 		return;
 	}
 
@@ -385,20 +385,20 @@ fs_read(Ixp9Req *r)
 			}
 			if(!(r->ofcall.rread.data = malloc(r->ofcall.rread.count))) {
 				r->ofcall.rread.count = 0;
-				respond(r, "out of memory");
+				ixp_respond(r, "out of memory");
 				return;
 			}
 			memcpy(r->ofcall.rread.data, fidaux->rd.buf.data+r->ifcall.tread.offset, r->ofcall.rread.count);
-			respond(r, NULL);
+			ixp_respond(r, NULL);
 			return;
 		} else if(fidaux->rdtype == EVENT) {
 			if(fidaux->rd.ev.list) {
 				evrespond(r);
 			} else {
-				/* there's no pending event, so we don't respond(), which leaves the client blocked */
+				/* there's no pending event, so we don't ixp_respond(), which leaves the client blocked */
 				if(fidaux->rd.ev.blocked) {
 					/* ... unless this fid is already blocked */
-					respond(r, "fid already blocked on /event");
+					ixp_respond(r, "fid already blocked on /event");
 				} else {
 					fidaux->rd.ev.blocked = r;
 				}	
@@ -407,7 +407,7 @@ fs_read(Ixp9Req *r)
 		}	
 	}
 
-	respond(r, NULL);
+	ixp_respond(r, NULL);
 }
 
 static char*
@@ -474,7 +474,7 @@ fs_write(Ixp9Req *r)
 			end = start + r->ifcall.twrite.count;
 			do {
 				if((errstr = getln(&song, fidaux, &start, end))) {
-					respond(r, errstr);
+					ixp_respond(r, errstr);
 					return;
 				}
 				if(song)
@@ -490,7 +490,7 @@ fs_write(Ixp9Req *r)
 				end = start + r->ifcall.twrite.count;
 				do {
 					if((errstr = getln(&song, fidaux, &start, end))) {
-						respond(r, errstr);
+						ixp_respond(r, errstr);
 						return;
 					}
 					if(song)
@@ -517,7 +517,7 @@ fs_write(Ixp9Req *r)
 						fidaux->rd.buf.data = newbuf;
 						fidaux->rd.buf.max = newmax;
 					} else {
-						respond(r, "out of memory");
+						ixp_respond(r, "out of memory");
 						return;
 					}
 				}
@@ -530,13 +530,13 @@ fs_write(Ixp9Req *r)
 			break;
 		}
 	}
-	respond(r, NULL);
+	ixp_respond(r, NULL);
 }
 
 void
 fs_wstat(Ixp9Req *r)
 {
-	respond(r, NULL); /* pretend it worked */
+	ixp_respond(r, NULL); /* pretend it worked */
 }
 
 Ixp9Srv p9srv = {
