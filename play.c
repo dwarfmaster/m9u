@@ -69,8 +69,14 @@ play(char *song)
 void
 skip(int n)
 {
-	playlist.current += n;
+	/* XXX n is ignored if queue is not empty... so:
+	 * a) there's no way to clear the queue in one message
+	 * b) there's no way to move the current song while the queue is populated */
+	if(!queue) {
+		playlist.current += n;
+	}
 	if(player_pid != -1 && !queue) {
+		/* songends() will advance playlist.current if the queue is empty, avoid that */
 		--playlist.current;
 	}
 	if(playlist.current < 0) {
