@@ -116,6 +116,7 @@ enqueue(char *song)
 
 	if(!(new = malloc(sizeof(Queue)))) {
 		fprintf(stderr, "m9u: %s couldn't alloc memory to queue song!\n", song);
+		return;
 	}
 	new->song = song;
 	new->next = NULL;

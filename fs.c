@@ -188,6 +188,18 @@ fs_walk(Ixp9Req *r)
 	ixp_respond(r, NULL);
 }
 
+/* writes a NUL terminated string to a buffer and adds a newline.
+ * returns the address of the next empty byte in the buffer */
+char*
+putline(char *buf, char *line)
+{
+	int len;
+	len = strlen(line);
+	memcpy(buf, line, len);
+	buf[len] = '\n';
+	return buf + len + 1;
+}
+
 void
 fs_open(Ixp9Req *r)
 {
@@ -207,7 +219,7 @@ fs_open(Ixp9Req *r)
 			fidaux->appendoffset = fidaux->rd.buf.size;
 			cp = fidaux->rd.buf.data;
 			for(i = 0; i < playlist.nsongs; ++i) {
-				cp += sprintf(cp, "%s\n", playlist.songs[i]);
+				cp = putline(cp, playlist.songs[i]);
 			}
 			r->fid->aux = fidaux;
 			break;
@@ -221,7 +233,7 @@ fs_open(Ixp9Req *r)
 			}
 			cp = fidaux->rd.buf.data;
 			for(qn = queue; qn; qn=qn->next) {
-				cp += sprintf(cp, "%s\n", qn->song);
+				cp = putline(cp, qn->song);
 			}
 			r->fid->aux = fidaux;
 			break;
