@@ -30,12 +30,14 @@ func (m9 *M9Player) spawn(song string) {
 		return
 	}
 	m9.player = player
+	m9.song = &song
 	events <- "Play " + song
 	go func() {
 		player.Wait()
 		if len(m9.queue) == 0 && len(m9.playlist) > 0 {
 			m9.position = (m9.position + 1) % len(m9.playlist)
 		}
+		m9.song = nil
 		if m9.player != nil {
 			m9.player = nil
 			m9.Play("")
@@ -171,15 +173,17 @@ var addr = flag.String("addr", ":5640", "network address")
 type CtlFile struct {
 	srv.File
 }
-type ListFile struct {
+type SongListFile struct {
 	srv.File
 	rd map[*srv.Fid] []byte
 	wr map[*srv.Fid] *PartialLine
+	SongAdded func(string)
+}
+type ListFile struct {
+	SongListFile
 }
 type QueueFile struct {
-	srv.File
-	rd map[*srv.Fid] []byte
-	wr map[*srv.Fid] *PartialLine
+	SongListFile
 }
 type EventFile struct {
 	srv.File
@@ -233,22 +237,14 @@ func (part *PartialLine) append(bytes []byte) string {
 
 func (lstfile *ListFile) Open(fid *srv.FFid, mode uint8) error {
 	if mode & 3 == p.OWRITE || mode & 3 == p.ORDWR {
-		fmt.Printf("/list: wr\n");
 		lstfile.wr[fid.Fid] = new(PartialLine)
 		if mode & p.OTRUNC != 0 {
 			m9.Clear()
 		}
 	}
 	if mode & 3 == p.OREAD || mode & 3 == p.ORDWR {
-		fmt.Printf("/list: rd\n");
 		lstfile.rd[fid.Fid] = mkbuf(m9.playlist)
 	}
-	return nil
-}
-
-func (lstfile *ListFile) Clunk(fid *srv.FFid) error {
-	delete(lstfile.rd, fid.Fid)
-	delete(lstfile.wr, fid.Fid)
 	return nil
 }
 
@@ -270,10 +266,10 @@ func m9err(file string, op string, msg string) *M9Error {
 	return err
 }
 
-func (lstfile *ListFile) Write(fid *srv.FFid, b []byte, offset uint64) (int, error) {
-	prefix, ok := lstfile.wr[fid.Fid]
+func (slf *SongListFile) Write(fid *srv.FFid, b []byte, offset uint64) (int, error) {
+	prefix, ok := slf.wr[fid.Fid]
 	if !ok {
-		return 0, m9err("/list", "write", "bad state")
+		return 0, m9err(fid.F.Name, "write", "bad state")
 	}
 	i := 0
 	for {
@@ -282,7 +278,8 @@ func (lstfile *ListFile) Write(fid *srv.FFid, b []byte, offset uint64) (int, err
 			break
 		}
 		song := prefix.append(b[i:j])
-		m9.Add(song)
+		slf.SongAdded(song)
+		//m9.Add(song)
 		i = j+1
 	}
 	if i < len(b) {
@@ -298,66 +295,34 @@ func min(a uint64, b uint64) uint64 {
 	return b
 }
 
-func (lstfile *ListFile) Read(fid *srv.FFid, b []byte, offset uint64) (int, error) {
-	buf, ok := lstfile.rd[fid.Fid]
+func (slf *SongListFile) Read(fid *srv.FFid, b []byte, offset uint64) (int, error) {
+	buf, ok := slf.rd[fid.Fid]
 	if !ok {
-		return 0, m9err("/list", "read", "bad state")
+		return 0, m9err(fid.F.Name, "read", "bad state")
 	}
 	remaining := uint64(len(buf)) - offset
 	n := min(remaining, uint64(len(b)))
 	copy(b, buf[offset:offset + n])
 	return int(n), nil
+}
+
+func (slf *SongListFile) Clunk(fid *srv.FFid) error {
+	delete(slf.rd, fid.Fid)
+	delete(slf.wr, fid.Fid)
+	return nil
 }
 
 
 func (qf *QueueFile) Open(fid *srv.FFid, mode uint8) error {
 	if mode & 3 == p.OWRITE || mode & 3 == p.ORDWR {
-		fmt.Printf("/list: wr\n");
 		qf.wr[fid.Fid] = new(PartialLine)
 	}
 	if mode & 3 == p.OREAD || mode & 3 == p.ORDWR {
-		fmt.Printf("/list: rd\n");
-		qf.rd[fid.Fid] = mkbuf(m9.playlist)
+		qf.rd[fid.Fid] = mkbuf(m9.queue)
 	}
 	return nil
 }
 
-func (qf *QueueFile) Clunk(fid *srv.FFid) error {
-	delete(qf.wr, fid.Fid)
-	delete(qf.rd, fid.Fid)
-	return nil
-}
-
-func (qf *QueueFile) Write(fid *srv.FFid, b []byte, offset uint64) (int, error) {
-	var aux *PartialLine
-	if fid.Fid.Aux == nil {
-		aux = new(PartialLine)
-		fid.Fid.Aux = aux
-	} else {
-		aux, _ = fid.Fid.Aux.(*PartialLine)
-	}
-	i := 0
-	for j := 0; j != -1; j = bytes.IndexByte(b[i:], '\n') {
-		song := aux.append(b[i:j])
-		m9.Enqueue(song)
-		i = j+1
-	}
-	if i < len(b) {
-		aux.leftover = b[i:]
-	}
-	return len(b), nil
-}
-
-func (qf *QueueFile) Read(fid *srv.FFid, b []byte, offset uint64) (int, error) {
-	buf, ok := qf.rd[fid.Fid]
-	if !ok {
-		return 0, m9err("/list", "read", "bad state")
-	}
-	remaining := uint64(len(buf)) - offset
-	n := min(remaining, uint64(len(b)))
-	copy(b, buf[offset:offset + n])
-	return int(n), nil
-}
 
 func (*EventFile) Read(fid *srv.FFid, b []byte, offset uint64) (int, error) {
 	var ev string
@@ -376,10 +341,14 @@ func (*EventFile) Read(fid *srv.FFid, b []byte, offset uint64) (int, error) {
 	return len(buf)+1, nil
 }
 
+func (slf *SongListFile) init(f func(string)) {
+	slf.wr = make(map[*srv.Fid]*PartialLine)
+	slf.rd = make(map[*srv.Fid] []byte)
+	slf.SongAdded = f
+}
+
 func main() {
 	var err error
-
-	_, _ = strconv.Atoi("1")
 
 	uid := p.OsUsers.Uid2User(os.Geteuid())
 	gid := p.OsUsers.Gid2Group(os.Getegid())
@@ -397,10 +366,10 @@ func main() {
 	ctl := new(CtlFile)
 	ctl.Add(root, "ctl", uid, gid, 0644, ctl)
 	list := new(ListFile)
-	list.wr = make(map[*srv.Fid]*PartialLine)
-	list.rd = make(map[*srv.Fid] []byte)
+	list.init(func(song string) {m9.Add(song)})
 	list.Add(root, "list", uid, gid, 0644, list)
 	queue := new(QueueFile)
+	queue.init(func(song string) {m9.Enqueue(song)})
 	queue.Add(root, "queue", uid, gid, 0644, queue)
 	event := new(EventFile)
 	event.Add(root, "event", uid, gid, 0444, event)
