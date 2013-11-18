@@ -25,6 +25,7 @@ type M9Player struct {
 }
 
 type M9Play struct {
+	Song string
 	proc *os.Process
 	killed bool
 }
@@ -47,9 +48,8 @@ func (m9 *M9Player) spawn(song string) {
 		fmt.Printf("couldn't spawn player: %s\n", err)
 		return
 	}
-	player := M9Play{proc, false}
+	player := M9Play{song, proc, false}
 	m9.player = &player
-	m9.song = &song
 	events <- "Play " + song
 	go func() {
 		proc.Wait()
@@ -59,28 +59,23 @@ func (m9 *M9Player) spawn(song string) {
 		if len(m9.queue) == 0 && len(m9.playlist) > 0 {
 			m9.position = (m9.position + 1) % len(m9.playlist)
 		}
-		m9.song = nil
 		m9.player = nil
 		m9.Play("")
 	}()
 }
 
 func (m9 *M9Player) state() string {
-	var s string
-	if m9.player == nil {
-		s = "Stop"
+	player := m9.player
+	if player != nil {
+		return "Play " + player.Song
 	} else {
-		s = "Play"
+		if len(m9.queue) > 0 {
+			return "Stop " + m9.queue[0]
+		} else if len(m9.playlist) > 0 {
+			return "Stop " + m9.playlist[m9.position]
+		}
+		return "Stop"
 	}
-
-	if m9.song != nil {
-		return s + " " + *m9.song
-	} else if len(m9.queue) > 0 {
-		return s + " " + m9.queue[0]
-	} else if len(m9.playlist) > 0 {
-		return s + " " + m9.playlist[m9.position]
-	}
-	return s
 }
 
 func (m9 *M9Player) Add(song string) {
@@ -140,7 +135,6 @@ func (m9 *M9Player) Stop() {
 }
 
 func play(song string) {
-	fmt.Printf("play: %s\n", song)
 	m9.Play(song)
 }
 
@@ -158,7 +152,6 @@ func skip(amount string) error {
 }
 
 func stop() {
-	fmt.Printf("stop:\n")
 	m9.Stop()
 }
 
