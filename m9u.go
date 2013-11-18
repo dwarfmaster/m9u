@@ -31,7 +31,7 @@ type M9Play struct {
 
 func (player *M9Play) Kill() {
 	player.killed = true
-	player.proc.Kill()
+	player.proc.Signal(os.Interrupt)
 }
 
 var m9 *M9Player
@@ -216,7 +216,6 @@ type EventFile struct {
 
 func (*CtlFile) Write(fid *srv.FFid, b []byte, offset uint64) (n int, err error) {
 	cmd := string(b)
-	fmt.Printf("write:  %s\n", cmd)
 	if strings.HasPrefix(cmd, "play") {
 		play(strings.Trim(cmd[4:], " \n"))
 	} else if strings.HasPrefix(cmd, "skip") {
