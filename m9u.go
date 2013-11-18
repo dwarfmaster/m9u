@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"sync"
 	"strconv"
 	"unicode/utf8"
 )
@@ -24,7 +26,12 @@ type M9Player struct {
 var m9 *M9Player
 
 func (m9 *M9Player) spawn(song string) {
-	player, err := os.StartProcess("/bin/echo", []string{"m9play", song}, new(os.ProcAttr))
+	path, err := exec.LookPath("m9play")
+	if err != nil {
+		fmt.Printf("couldn't find m9play: %s\n", err)
+		return
+	}
+	player, err := os.StartProcess(path, []string{"m9play", song}, new(os.ProcAttr))
 	if err != nil {
 		fmt.Printf("couldn't spawn player: %s\n", err)
 		return
@@ -125,6 +132,10 @@ func play(song string) {
 }
 
 func skip(amount string) error {
+	if amount == "" {
+		m9.Skip(1)
+		return nil
+	}
 	i, err := strconv.Atoi(amount)
 	if err != nil {
 		return err
@@ -168,7 +179,8 @@ func waitForEvent() string {
 	return ev
 }
 
-var addr = flag.String("addr", ":5640", "network address")
+var net = flag.String("net", "unix", "network type")
+var addr = flag.String("addr", "/tmp/ns.sqweek.:0/m9u", "network address")
 
 type CtlFile struct {
 	srv.File
@@ -277,10 +289,10 @@ func (slf *SongListFile) Write(fid *srv.FFid, b []byte, offset uint64) (int, err
 		if j == -1 {
 			break
 		}
-		song := prefix.append(b[i:j])
+		song := prefix.append(b[i:i+j])
 		slf.SongAdded(song)
 		//m9.Add(song)
-		i = j+1
+		i += j+1
 	}
 	if i < len(b) {
 		prefix.leftover = b[i:]
@@ -349,6 +361,7 @@ func (slf *SongListFile) init(f func(string)) {
 
 func main() {
 	var err error
+	flag.Parse()
 
 	uid := p.OsUsers.Uid2User(os.Geteuid())
 	gid := p.OsUsers.Gid2Group(os.Getegid())
@@ -376,7 +389,7 @@ func main() {
 
 	s := srv.NewFileSrv(root)
 	s.Start(s)
-	err = s.StartNetListener("tcp", *addr)
+	err = s.StartNetListener(*net, *addr)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 	}
