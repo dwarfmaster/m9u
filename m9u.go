@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sync"
 	"strconv"
 	"unicode/utf8"
 )
@@ -19,8 +18,20 @@ type M9Player struct {
 	position int
 	queue []string
 
-	player *os.Process
+	player *M9Play
 	song *string
+
+	actions chan func()
+}
+
+type M9Play struct {
+	proc *os.Process
+	killed bool
+}
+
+func (player *M9Play) Kill() {
+	player.killed = true
+	player.proc.Kill()
 }
 
 var m9 *M9Player
@@ -31,24 +42,26 @@ func (m9 *M9Player) spawn(song string) {
 		fmt.Printf("couldn't find m9play: %s\n", err)
 		return
 	}
-	player, err := os.StartProcess(path, []string{"m9play", song}, new(os.ProcAttr))
+	proc, err := os.StartProcess(path, []string{"m9play", song}, new(os.ProcAttr))
 	if err != nil {
 		fmt.Printf("couldn't spawn player: %s\n", err)
 		return
 	}
-	m9.player = player
+	player := M9Play{proc, false}
+	m9.player = &player
 	m9.song = &song
 	events <- "Play " + song
 	go func() {
-		player.Wait()
+		proc.Wait()
+		if player.killed {
+			return
+		}
 		if len(m9.queue) == 0 && len(m9.playlist) > 0 {
 			m9.position = (m9.position + 1) % len(m9.playlist)
 		}
 		m9.song = nil
-		if m9.player != nil {
-			m9.player = nil
-			m9.Play("")
-		}
+		m9.player = nil
+		m9.Play("")
 	}()
 }
 
