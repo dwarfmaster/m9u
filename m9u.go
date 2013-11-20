@@ -80,6 +80,11 @@ func (m9 *M9Player) state() string {
 
 func (m9 *M9Player) Add(song string) {
 	m9.playlist = append(m9.playlist, song)
+	if m9.player == nil && len(m9.queue) == 0 && len(m9.playlist) == 1 {
+		/* We are stopped, the queue is empty and this was the first song added to the list.
+		 * Update /event to reflect the correct next-song */
+		events <- m9.state()
+	}
 }
 
 func (m9 *M9Player) Clear() {
@@ -88,6 +93,11 @@ func (m9 *M9Player) Clear() {
 
 func (m9 *M9Player) Enqueue(song string) {
 	m9.queue = append(m9.queue, song)
+	if m9.player != nil && len(m9.queue) == 1 {
+		/* We are stopped, and this was the first item added to the queue.
+		 * Update /event to show the correct next-song */
+		events <- m9.state()
+	}
 }
 
 func (m9 *M9Player) Play(song string) {
