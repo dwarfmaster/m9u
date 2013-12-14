@@ -4,6 +4,7 @@ import (
 	"code.google.com/p/go9p/p"
 	"code.google.com/p/go9p/p/srv"
 	"strings"
+	"errors"
 	"bytes"
 	"flag"
 	"fmt"
@@ -64,6 +65,7 @@ func (m9 *M9Player) spawn(song string) {
 	}()
 }
 
+/* instantaneous state */
 func (m9 *M9Player) state() string {
 	player := m9.player
 	if player != nil {
@@ -167,8 +169,6 @@ func stop() {
 
 
 
-
-
 var events chan string
 var register chan chan string
 
@@ -226,12 +226,16 @@ func (*CtlFile) Write(fid *srv.FFid, b []byte, offset uint64) (n int, err error)
 	} else if strings.HasPrefix(cmd, "stop") {
 		stop()
 	} else {
-		err = m9err("/ctl", "write", "syntax error")
+		err = errors.New("ill-formed control message")
 	}
 	if err == nil {
 		n = len(b)
 	}
 	return n, err
+}
+
+func (*CtlFile) Wstat(fid *srv.FFid, d *p.Dir) error {
+	return nil
 }
 
 func mkbuf(lst []string) []byte {
@@ -275,28 +279,10 @@ func (lstfile *ListFile) Open(fid *srv.FFid, mode uint8) error {
 	return nil
 }
 
-type M9Error struct {
-	file string
-	op string
-	msg string
-}
-
-func (e *M9Error) Error() string {
-	return e.file + ": " + e.op + ": " + e.msg
-}
-
-func m9err(file string, op string, msg string) *M9Error {
-	err := new(M9Error)
-	err.file = file
-	err.op = op
-	err.msg = msg
-	return err
-}
-
 func (slf *SongListFile) Write(fid *srv.FFid, b []byte, offset uint64) (int, error) {
 	prefix, ok := slf.wr[fid.Fid]
 	if !ok {
-		return 0, m9err(fid.F.Name, "write", "bad state")
+		return 0, errors.New("internal state corrupted")
 	}
 	i := 0
 	for {
@@ -315,6 +301,12 @@ func (slf *SongListFile) Write(fid *srv.FFid, b []byte, offset uint64) (int, err
 	return len(b), nil
 }
 
+func (slf *SongListFile) Wstat(fid *srv.FFid, d *p.Dir) error {
+	return nil
+}
+
+
+
 func min(a uint64, b uint64) uint64 {
 	if a < b {
 		return a
@@ -325,7 +317,7 @@ func min(a uint64, b uint64) uint64 {
 func (slf *SongListFile) Read(fid *srv.FFid, b []byte, offset uint64) (int, error) {
 	buf, ok := slf.rd[fid.Fid]
 	if !ok {
-		return 0, m9err(fid.F.Name, "read", "bad state")
+		return 0, errors.New("internal state corrupted")
 	}
 	remaining := uint64(len(buf)) - offset
 	n := min(remaining, uint64(len(b)))
@@ -366,6 +358,10 @@ func (*EventFile) Read(fid *srv.FFid, b []byte, offset uint64) (int, error) {
 	copy(b[:len(buf)], buf)
 	b[len(buf)] = byte('\n')
 	return len(buf)+1, nil
+}
+
+func (*EventFile) Wstat(fid *srv.FFid, dir *p.Dir) error {
+	return nil
 }
 
 func (slf *SongListFile) init(f func(string)) {
