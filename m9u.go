@@ -6,6 +6,7 @@ import (
 	"strings"
 	"errors"
 	"bytes"
+	"time"
 	"flag"
 	"fmt"
 	"os"
@@ -22,47 +23,87 @@ type M9Player struct {
 	player *M9Play
 	song *string
 
-	actions chan func()
+	spawn chan string
 }
 
 type M9Play struct {
 	Song string
 	proc *os.Process
 	killed bool
+	reaped bool
 }
 
 func (player *M9Play) Kill() {
+	if player.killed {
+		return
+	}
 	player.killed = true
-	player.proc.Signal(os.Interrupt)
+	go func() {
+		/* we want to make sure the process dies, but give it a chance
+		 * to go to its death gracefully before pulling out SIGKILL */
+		for i := 0; i < 5; i++ {
+			player.proc.Signal(os.Interrupt)
+			time.Sleep(25 * time.Millisecond)
+			if player.reaped {
+				return
+			}
+		}
+		player.proc.Kill()
+	}()
+}
+
+func (player *M9Play) Reap(m9 *M9Player) {
+	player.proc.Wait()
+	player.reaped = true
+	if player.killed {
+		return
+	}
+	/* player terminated normally, kickoff next song */
+	if len(m9.queue) == 0 && len(m9.playlist) > 0 {
+		m9.position = (m9.position + 1) % len(m9.playlist)
+	}
+	m9.Play("")
 }
 
 var m9 *M9Player
 
-func (m9 *M9Player) spawn(song string) {
+func NewM9Player() *M9Player {
+	m9 := M9Player{spawn: make(chan string, 15)}
+	go m9.spawner()
+	return &m9
+}
+
+func (m9 *M9Player) _spawn(song string) *M9Play {
 	path, err := exec.LookPath("m9play")
 	if err != nil {
 		fmt.Printf("couldn't find m9play: %s\n", err)
-		return
+		return nil
 	}
 	proc, err := os.StartProcess(path, []string{"m9play", song}, new(os.ProcAttr))
 	if err != nil {
 		fmt.Printf("couldn't spawn player: %s\n", err)
-		return
+		return nil
 	}
-	player := M9Play{song, proc, false}
-	m9.player = &player
-	events <- "Play " + song
-	go func() {
-		proc.Wait()
-		if player.killed {
-			return
+	return &M9Play{song, proc, false, false}
+}
+
+func (m9 *M9Player) spawner() {
+	for {
+		song := <-m9.spawn
+		if m9.player != nil {
+			/* already playing; stop the current player first */
+			m9.player.Kill()
 		}
-		if len(m9.queue) == 0 && len(m9.playlist) > 0 {
-			m9.position = (m9.position + 1) % len(m9.playlist)
+		player := m9._spawn(song)
+		if player == nil {
+			m9.player = nil
+			events <- m9.state()
+			continue
 		}
-		m9.player = nil
-		m9.Play("")
-	}()
+		go player.Reap(m9)
+		m9.player = player
+		events <- "Play " + song
+	}
 }
 
 /* instantaneous state */
@@ -103,20 +144,14 @@ func (m9 *M9Player) Enqueue(song string) {
 }
 
 func (m9 *M9Player) Play(song string) {
-	player := m9.player
-	if player != nil {
-		/* already playing; stop the current player first */
-		m9.player = nil
-		player.Kill()
-	}
 	if song != "" {
-		m9.spawn(song)
+		m9.spawn <- song
 	} else {
 		if len(m9.queue) > 0 {
-			m9.spawn(m9.queue[0])
+			m9.spawn <- m9.queue[0]
 			m9.queue = m9.queue[1:]
 		} else if len(m9.playlist) > 0 {
-			m9.spawn(m9.playlist[m9.position])
+			m9.spawn <- m9.playlist[m9.position]
 		}
 	}
 }
@@ -146,10 +181,6 @@ func (m9 *M9Player) Stop() {
 	events <- m9.state()
 }
 
-func play(song string) {
-	m9.Play(song)
-}
-
 func skip(amount string) error {
 	if amount == "" {
 		m9.Skip(1)
@@ -162,11 +193,6 @@ func skip(amount string) error {
 	m9.Skip(i)
 	return nil
 }
-
-func stop() {
-	m9.Stop()
-}
-
 
 
 var events chan string
@@ -220,11 +246,11 @@ type EventFile struct {
 func (*CtlFile) Write(fid *srv.FFid, b []byte, offset uint64) (n int, err error) {
 	cmd := string(b)
 	if strings.HasPrefix(cmd, "play") {
-		play(strings.Trim(cmd[4:], " \n"))
+		m9.Play(strings.Trim(cmd[4:], " \n"))
 	} else if strings.HasPrefix(cmd, "skip") {
 		err = skip(strings.Trim(cmd[4:], " \n"))
 	} else if strings.HasPrefix(cmd, "stop") {
-		stop()
+		m9.Stop()
 	} else {
 		err = errors.New("ill-formed control message")
 	}
@@ -381,7 +407,7 @@ func main() {
 	events = make(chan string)
 	register = make(chan chan string)
 
-	m9 = new(M9Player)
+	m9 = NewM9Player()
 
 	go eventer()
 
