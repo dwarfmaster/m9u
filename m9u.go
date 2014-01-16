@@ -9,8 +9,11 @@ import (
 	"time"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 	"strconv"
 	"unicode/utf8"
 )
@@ -221,7 +224,7 @@ func waitForEvent() string {
 	return ev
 }
 
-var net = flag.String("net", "unix", "network type")
+var ntype = flag.String("net", "unix", "network type")
 var addr = flag.String("addr", "/tmp/ns.sqweek.:0/m9u", "network address")
 
 type CtlFile struct {
@@ -425,8 +428,23 @@ func main() {
 	event.Add(root, "event", uid, gid, 0444, event)
 
 	s := srv.NewFileSrv(root)
+
+	listener, err := net.Listen(*ntype, *addr)
+	if err != nil {
+		fmt.Printf("listen failed: %s\n", err)
+		os.Exit(1)
+	}
+	defer listener.Close()
+	sigchan := make(chan os.Signal)
+	go func() {
+		<- sigchan
+		listener.Close()
+		os.Exit(1)
+	}()
+	signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+
 	s.Start(s)
-	err = s.StartNetListener(*net, *addr)
+	err = s.StartListener(listener)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 	}
