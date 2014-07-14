@@ -292,7 +292,7 @@ func (part *PartialLine) append(bytes []byte) string {
 	}
 	left := part.leftover
 	part.leftover = nil
-	return string(left) + string(bytes)
+	return string(append(left, bytes...))
 }
 
 func (lstfile *ListFile) Open(fid *srv.FFid, mode uint8) error {
@@ -308,29 +308,35 @@ func (lstfile *ListFile) Open(fid *srv.FFid, mode uint8) error {
 	return nil
 }
 
+func (lstfile *ListFile) Wstat(fid *srv.FFid, d *p.Dir) error {
+	if d.Length == 0 {
+		m9.Clear()
+	}
+	return nil
+}
+
 func (slf *SongListFile) Write(fid *srv.FFid, b []byte, offset uint64) (int, error) {
 	prefix, ok := slf.wr[fid.Fid]
 	if !ok {
 		return 0, errors.New("internal state corrupted")
 	}
 	i := 0
-	for {
+	for i < len(b) {
 		j := bytes.IndexByte(b[i:], '\n')
 		if j == -1 {
 			break
 		}
 		song := prefix.append(b[i:i+j])
 		slf.SongAdded(song)
-		//m9.Add(song)
 		i += j+1
 	}
 	if i < len(b) {
-		prefix.leftover = b[i:]
+		prefix.leftover = append(prefix.leftover, b[i:]...)
 	}
 	return len(b), nil
 }
 
-func (slf *SongListFile) Wstat(fid *srv.FFid, d *p.Dir) error {
+func (queue *QueueFile) Wstat(fid *srv.FFid, d *p.Dir) error {
 	return nil
 }
 
