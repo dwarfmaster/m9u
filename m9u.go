@@ -139,7 +139,7 @@ func (m9 *M9Player) Clear() {
 
 func (m9 *M9Player) Enqueue(song string) {
 	m9.queue = append(m9.queue, song)
-	if m9.player != nil && len(m9.queue) == 1 {
+	if m9.player == nil && len(m9.queue) == 1 {
 		/* We are stopped, and this was the first item added to the queue.
 		 * Update /event to show the correct next-song */
 		events <- m9.state()
