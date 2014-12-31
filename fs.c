@@ -27,7 +27,7 @@
 /* name, parent, type, mode, size */
 Fileinfo files[QMAX] = {
 	{"", QNONE, P9_QTDIR, 0500|P9_DMDIR, 0},
-	{"ctl", QROOT, P9_QTFILE, 0200, 0},
+	{"ctl", QROOT, P9_QTFILE, 0600, 0},
 	{"list", QROOT, P9_QTFILE, 0600, 0},
 	{"queue", QROOT, P9_QTFILE, 0600|P9_OAPPEND, 0},
 	{"event", QROOT, P9_QTFILE, 0400, 0}
@@ -209,6 +209,18 @@ fs_open(Ixp9Req *r)
 
 	/* TODO most of this stuff only has to be done when opening for read */
 	switch(r->fid->qid.path) {
+        case QCTL: {
+            char buffer[15];
+            snprintf(buffer, 15, "%i", current());
+            if(!(fidaux = newbufaux(strlen(buffer)))) {
+                ixp_respond(r, "out of memory");
+                return;
+            }
+            fidaux->appendoffset = fidaux->rd.buf.size;
+            strcpy(fidaux->rd.buf.data, buffer);
+            r->fid->aux = fidaux;
+            break;
+        }
 		case QLIST: {
 			int i;
 

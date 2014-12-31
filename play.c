@@ -145,3 +145,10 @@ songends()
 		play(playlist.songs[playlist.current]);
 	}
 }
+
+int
+current()
+{
+    return playlist.current;
+}
+

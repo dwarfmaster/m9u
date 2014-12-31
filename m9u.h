@@ -79,6 +79,7 @@ extern void clear();
 extern void enqueue(char*);
 extern char* play(char*);
 extern void songends();
+extern int current();
 
 extern void putevent(IxpFid*, char*, ...);
 extern void evrespond(Ixp9Req *r);
